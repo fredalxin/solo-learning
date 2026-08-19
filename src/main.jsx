@@ -31,13 +31,13 @@ import "./styles.css";
    warm earth-tone range so canvases feel like one editorial family. */
 const palettes = [
   /* default: Terra Cotta / Honey Wheat / Moss Green / Stone Rule */
-  ["#D0937F", "#D6B06C", "#A9B59A", "#D9D1C9"],
+  ["#D0937F", "#D6B06C", "#88A2B9", "#D9D1C9"],
   /* info: Dusty Mauve / Slate Blue / Moss Green / Sky Tint */
-  ["#B6ABBC", "#88A2B9", "#A9B59A", "#DBE5ED"],
+  ["#B6ABBC", "#88A2B9", "#88A2B9", "#DBE5ED"],
   /* warm: Brick Clay / Terra Cotta / Honey Wheat / Terra Tint */
   ["#CF8275", "#D0937F", "#D6B06C", "#F0DED7"],
   /* sage-anchored: Moss Green / Honey Wheat / Slate Blue / Sage Tint */
-  ["#A9B59A", "#D6B06C", "#88A2B9", "#E6EADF"],
+  ["#88A2B9", "#D6B06C", "#88A2B9", "#DBE5ED"],
 ];
 
 const DEFAULT_BOARD_HEIGHT = 480;
@@ -3489,7 +3489,7 @@ function VisualConfigOptionPreview({ groupKey, value }) {
         <path d="M18 40v14l26 13V53Z" fill="var(--warning-strong)" />
         <path d="M70 40v14L44 67V53Z" fill="var(--warning)" />
         <path d="m61 27 22-11 26 13-22 11Z" fill="var(--info)" />
-        <path d="M61 27v14l26 13V40Z" fill="var(--success)" />
+        <path d="M61 27v14l26 13V40Z" fill="var(--info)" />
         <path d="M109 29v14L87 54V40Z" fill="var(--accent-strong)" />
       </svg>
     );
@@ -3505,10 +3505,10 @@ function VisualConfigOptionPreview({ groupKey, value }) {
     );
     return (
       <svg {...commonProps}>
-        <rect width="132" height="72" fill="#edf0eb" />
-        <path d="M28 20h45v35H28Z" fill="#d9b555" stroke="#2f5149" strokeWidth="1.5" />
+        <rect width="132" height="72" fill="var(--canvas)" />
+        <path d="M28 20h45v35H28Z" fill="#d9b555" stroke="var(--ink)" strokeWidth="1.5" />
         <path d="M35 26h31v23H35Z" fill="#f5eedf" />
-        <path d="M78 17h26v38H78Z" fill="#559080" stroke="#2f5149" strokeWidth="1.5" />
+        <path d="M78 17h26v38H78Z" fill="var(--info)" stroke="var(--ink)" strokeWidth="1.5" />
         <path d="M73 22h5M73 31h5M73 40h5M73 49h5" stroke="#bd624d" strokeWidth="2" />
         <circle cx="50" cy="38" r="7" fill="none" stroke="#bd624d" strokeWidth="3" />
       </svg>
@@ -3520,14 +3520,14 @@ function VisualConfigOptionPreview({ groupKey, value }) {
       <svg {...commonProps}>
         <defs><linearGradient id="style-real-sky" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#9dcad0" /><stop offset="1" stopColor="#f2d8a7" /></linearGradient></defs>
         <rect width="132" height="72" fill="url(#style-real-sky)" />
-        <path d="M0 54 30 31l17 15 20-26 26 28 17-13 22 19v18H0Z" fill="#526f62" />
+        <path d="M0 54 30 31l17 15 20-26 26 28 17-13 22 19v18H0Z" fill="var(--info)" />
         <path d="M52 72 65 43l14 29Z" fill="#e7d6b2" opacity=".82" />
         <circle cx="105" cy="17" r="8" fill="#f5cf68" />
       </svg>
     );
     if (value === "technical") return (
       <svg {...commonProps}>
-        <rect width="132" height="72" fill="#204d59" />
+        <rect width="132" height="72" fill="var(--ink)" />
         <g fill="none" stroke="#bce6df" strokeWidth="1">
           <path d="M20 50V20h48v30Zm8-7 14-16 17 16Z" />
           <circle cx="91" cy="35" r="17" /><circle cx="91" cy="35" r="7" />
@@ -3540,8 +3540,8 @@ function VisualConfigOptionPreview({ groupKey, value }) {
         <rect width="132" height="72" fill="#f6f0e3" />
         <circle cx="28" cy="35" r="17" fill="#e2b74e" />
         <path d="M28 18a17 17 0 0 1 15 25L28 35Z" fill="#d9654e" />
-        <rect x="55" y="16" width="61" height="7" fill="#3f7769" />
-        <rect x="55" y="31" width="45" height="7" fill="#79a99c" />
+        <rect x="55" y="16" width="61" height="7" fill="var(--accent)" />
+        <rect x="55" y="31" width="45" height="7" fill="var(--info-light)" />
         <rect x="55" y="46" width="54" height="7" fill="#d7a94b" />
       </svg>
     );
@@ -3558,7 +3558,7 @@ function VisualConfigOptionPreview({ groupKey, value }) {
     return (
       <svg {...commonProps}>
         <rect width="132" height="72" fill="#f7f5ee" />
-        <circle cx="35" cy="36" r="16" fill="#3e7568" />
+        <circle cx="35" cy="36" r="16" fill="var(--accent)" />
         <rect x="60" y="22" width="43" height="28" fill="#e3b448" />
         <path d="M48 36h12" stroke="#20241f" strokeWidth="2" />
       </svg>
@@ -3568,7 +3568,7 @@ function VisualConfigOptionPreview({ groupKey, value }) {
   if (groupKey === "tone") {
     /* Solo archive tone palettes (5 sets, all from the 22-token color card) */
     const palettesByTone = {
-      natural: ["#A9B59A", "#6E665E", "#D6B06C", "#FAF6F1"],
+      natural: ["#88A2B9", "#6E665E", "#D6B06C", "#FAF6F1"],
       bright:  ["#D0937F", "#FCFAF7", "#D6B06C", "#FFFDFB"],
       cool:    ["#88A2B9", "#39342F", "#B6ABBC", "#DBE5ED"],
       warm:    ["#D0937F", "#F0DED7", "#D6B06C", "#FAF6F1"],
@@ -3589,15 +3589,15 @@ function VisualConfigOptionPreview({ groupKey, value }) {
   if (value === "technology") return (
     <svg {...commonProps}>
       <rect width="132" height="72" fill="#e7eeee" />
-      <rect x="40" y="15" width="52" height="42" rx="3" fill="#356f67" />
+      <rect x="40" y="15" width="52" height="42" rx="3" fill="var(--accent-strong)" />
       <rect x="50" y="24" width="32" height="24" fill="#d6b04e" />
-      <g stroke="#356f67" strokeWidth="2"><path d="M28 20h12M28 30h12M28 40h12M28 50h12M92 20h12M92 30h12M92 40h12M92 50h12" /></g>
+      <g stroke="var(--accent-strong)" strokeWidth="2"><path d="M28 20h12M28 30h12M28 40h12M28 50h12M92 20h12M92 30h12M92 40h12M92 50h12" /></g>
     </svg>
   );
   if (value === "industry") return (
     <svg {...commonProps}>
       <rect width="132" height="72" fill="#ecebe4" />
-      <path d="M13 57V31l22 10V28l24 12V20h15v37Z" fill="#637a73" />
+      <path d="M13 57V31l22 10V28l24 12V20h15v37Z" fill="var(--stone)" />
       <rect x="80" y="24" width="35" height="33" fill="#d2a648" />
       <circle cx="92" cy="42" r="8" fill="none" stroke="#354b45" strokeWidth="3" />
       <path d="M0 58h132" stroke="#293d38" strokeWidth="3" />
@@ -3615,8 +3615,8 @@ function VisualConfigOptionPreview({ groupKey, value }) {
     <svg {...commonProps}>
       <rect width="132" height="72" fill="#dcebea" />
       <circle cx="105" cy="17" r="8" fill="#e6bd55" />
-      <path d="M0 59 33 24l20 23 17-16 31 28Z" fill="#718d73" />
-      <path d="M17 60 32 38l15 22Z" fill="#315f50" />
+      <path d="M0 59 33 24l20 23 17-16 31 28Z" fill="var(--stone)" />
+      <path d="M17 60 32 38l15 22Z" fill="var(--accent-strong)" />
       <rect x="29" y="54" width="5" height="11" fill="#735748" />
     </svg>
   );
