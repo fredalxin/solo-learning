@@ -1,0 +1,149 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kicker",
+    "title",
+    "summary",
+    "metaphor",
+    "facts",
+    "steps",
+    "children",
+    "visual"
+  ],
+  "properties": {
+    "kicker": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 120
+    },
+    "metaphor": {
+      "type": "string"
+    },
+    "facts": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 2,
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "string"
+      }
+    },
+    "children": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "string"
+      }
+    },
+    "visual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "center",
+        "nodes",
+        "links",
+        "sceneSvg"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "flow",
+            "cycle",
+            "network",
+            "compare",
+            "layers"
+          ]
+        },
+        "center": {
+          "type": "string"
+        },
+        "nodes": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "label",
+              "detail",
+              "questions"
+            ],
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string",
+                "minLength": 80
+              },
+              "questions": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "links": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "from",
+              "to",
+              "label"
+            ],
+            "properties": {
+              "from": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 5
+              },
+              "to": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 5
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "sceneSvg": {
+          "type": "string",
+          "minLength": 200
+        }
+      }
+    }
+  }
+}

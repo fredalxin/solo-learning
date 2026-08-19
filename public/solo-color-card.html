@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Solo — archive theme palette</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,500&family=Space+Grotesk:wght@500;600&family=Space+Mono:wght@400;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --canvas: #FAF6F1;
+      --surface: #FFFDFB;
+      --ink: #39342F;
+      --ink-strong: #1a1714;
+      --line: #D9D1C9;
+      --muted: #6E665E;
+      --primary: #F5EBE9;
+      --primary-light: #FCFAF7;
+      --accent: #D0937F;
+      --accent-light: #F0DED7;
+      --info: #88A2B9;
+      --info-light: #DBE5ED;
+      --success: #A9B59A;
+      --success-light: #E6EADF;
+      --warning: #D6B06C;
+      --warning-light: #F2E6CC;
+      --danger: #CF8275;
+      --danger-light: #F1DDD8;
+      --violet: #B6ABBC;
+      --violet-light: #E8E1EB;
+      --stone: #CBC3BA;
+      --stone-light: #EBE7E2;
+
+      --font-body: "Inter", system-ui, -apple-system, sans-serif;
+      --font-heading: "Space Grotesk", system-ui, sans-serif;
+      --font-display: "Literata", Georgia, serif;
+      --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    }
+
+    body {
+      margin: 0;
+      padding: 56px 64px 96px;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: var(--font-body);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .heading {
+      max-width: 1280px;
+      margin: 0 auto 32px;
+    }
+    .heading h1 {
+      margin: 0 0 6px;
+      font-family: var(--font-display);
+      font-size: 30px;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+    }
+    .heading p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      letter-spacing: 0.02em;
+    }
+
+    .grid {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    .swatch {
+      position: relative;
+      padding: 22px 26px 24px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .swatch.dark { color: var(--ink); }
+    .swatch.warm-canvas { background: var(--canvas); }
+    .swatch.tag-light {
+      position: absolute;
+      top: 14px;
+      left: 26px;
+      padding: 2px 9px;
+      background: rgba(57, 52, 47, 0.12);
+      color: var(--ink);
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      border-radius: 4px;
+    }
+    .swatch.noise-tag {
+      background: var(--stone-light);
+      color: var(--ink);
+    }
+    .row1 {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 8px;
+    }
+    .row1 .name {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .row1 .name .zh { margin-right: 6px; }
+    .row2 {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--ink);
+      opacity: 0.85;
+    }
+    .row2 .num {
+      display: inline-grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 4px;
+      background: rgba(57, 52, 47, 0.08);
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .row2 .token { color: var(--ink); font-weight: 500; }
+    .row2 .hex { color: var(--ink); font-weight: 600; letter-spacing: 0.04em; }
+    .row2 .contrast { margin-left: auto; color: var(--muted); }
+    .row3 {
+      margin-top: 14px;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.01em;
+    }
+    .row3 .zh { margin-right: 6px; }
+
+    /* Specific variants */
+    .swatch--canvas { background: var(--canvas); }
+    .swatch--surface { background: var(--surface); }
+    .swatch--ink { background: var(--ink); color: var(--surface); }
+    .swatch--ink .row2 .num { background: rgba(255,255,255,0.10); color: var(--surface); }
+    .swatch--ink .row2 .token,
+    .swatch--ink .row2 .hex { color: var(--surface); }
+    .swatch--ink .row2 .contrast { color: rgba(255,255,255,0.7); }
+    .swatch--ink .row3 { color: rgba(255,255,255,0.7); }
+    .swatch--line { background: var(--line); }
+    .swatch--muted { background: var(--muted); color: var(--surface); }
+    .swatch--muted .row2 .num { background: rgba(255,255,255,0.10); color: var(--surface); }
+    .swatch--muted .row2 .token,
+    .swatch--muted .row2 .hex { color: var(--surface); }
+    .swatch--muted .row2 .contrast { color: rgba(255,255,255,0.7); }
+    .swatch--muted .row3 { color: rgba(255,255,255,0.7); }
+    .swatch--primary { background: var(--primary); }
+    .swatch--primary-light { background: var(--primary-light); }
+    .swatch--accent { background: var(--accent); color: var(--ink); }
+    .swatch--accent-light { background: var(--accent-light); }
+    .swatch--info { background: var(--info); color: var(--ink); }
+    .swatch--info-light { background: var(--info-light); }
+    .swatch--success { background: var(--success); color: var(--ink); }
+    .swatch--success-light { background: var(--success-light); }
+    .swatch--warning { background: var(--warning); color: var(--ink); }
+    .swatch--warning-light { background: var(--warning-light); }
+    .swatch--danger { background: var(--danger); color: var(--ink); }
+    .swatch--danger-light { background: var(--danger-light); }
+    .swatch--violet { background: var(--violet); color: var(--ink); }
+    .swatch--violet-light { background: var(--violet-light); }
+    .swatch--stone { background: var(--stone); color: var(--ink); }
+    .swatch--stone-light { background: var(--stone-light); }
+
+    /* Halftone */
+    .halftone {
+      position: relative;
+    }
+    .halftone::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+      background-size: 200px 200px;
+      opacity: 0.05;
+      mix-blend-mode: multiply;
+      pointer-events: none;
+    }
+    .halftone .row2 { position: relative; z-index: 1; }
+    .halftone .row3 { position: relative; z-index: 1; }
+
+    .footer {
+      max-width: 1280px;
+      margin: 32px auto 0;
+      padding-top: 24px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      letter-spacing: 0.02em;
+    }
+  </style>
+</head>
+<body>
+  <div class="heading">
+    <h1>Solo — archive theme palette</h1>
+    <p>22 tokens · 5 structural · 1 halftone grain · all text WCAG AA+</p>
+  </div>
+
+  <div class="grid">
+    <div class="swatch swatch--canvas">
+      <div class="row1"><div class="name"><span class="zh">米白底</span>Cream Paper</div></div>
+      <div class="row2"><span class="num">01</span><span class="token">--canvas</span><span class="hex">#FAF6F1</span><span class="contrast">contrast 11.44</span></div>
+      <div class="row3"><span class="zh">页面/卡片外底色</span>page background / outer card</div>
+    </div>
+
+    <div class="swatch swatch--surface">
+      <div class="row1"><div class="name"><span class="zh">象牙白</span>Ivory Sheet</div></div>
+      <div class="row2"><span class="num">02</span><span class="token">--surface</span><span class="hex">#FFFDFB</span><span class="contrast">contrast 12.13</span></div>
+      <div class="row3"><span class="zh">卡片/弹窗/按钮面色</span>card / popup / button surface</div>
+    </div>
+
+    <div class="swatch swatch--ink">
+      <div class="row1"><div class="name"><span class="zh">暖墨棕</span>Warm Ink</div></div>
+      <div class="row2"><span class="num">03</span><span class="token">--ink</span><span class="hex">#39342F</span><span class="contrast">contrast 12.13</span></div>
+      <div class="row3"><span class="zh">正文/标题/描边/focus outline</span>text / title / stroke / focus</div>
+    </div>
+
+    <div class="swatch swatch--line">
+      <div class="row1"><div class="name"><span class="zh">暖灰线</span>Stone Rule</div></div>
+      <div class="row2"><span class="num">04</span><span class="token">--line</span><span class="hex">#D9D1C9</span><span class="contrast">contrast 8.15</span></div>
+      <div class="row3"><span class="zh">卡片边框/分隔线/1px 描边</span>card border / divider / 1px hairline</div>
+    </div>
+
+    <div class="swatch swatch--muted">
+      <div class="row1"><div class="name"><span class="zh">次级文字</span>Muted Ink</div></div>
+      <div class="row2"><span class="num">05</span><span class="token">--muted</span><span class="hex">#6E665E</span><span class="contrast">contrast 5.56</span></div>
+      <div class="row3"><span class="zh">副标题/描述/提示语/placeholder</span>subhead / description / placeholder</div>
+    </div>
+
+    <div class="swatch swatch--primary">
+      <div class="row1"><div class="name"><span class="zh">米黄主色</span>Wheat Pulp</div></div>
+      <div class="row2"><span class="num">06</span><span class="token">--primary</span><span class="hex">#F5EBE9</span><span class="contrast">contrast 10.79</span></div>
+      <div class="row3"><span class="zh">CTA/选中态/重点标签 / 与 canvas 几乎同色</span>CTA / selected / important label</div>
+    </div>
+
+    <div class="swatch swatch--primary-light">
+      <div class="row1"><div class="name"><span class="zh">米黄浅</span>Wheat Mist</div></div>
+      <div class="row2"><span class="num">07</span><span class="token">--primary-light</span><span class="hex">#FCFAF7</span><span class="contrast">contrast 11.81</span></div>
+      <div class="row3"><span class="zh">hover 底色/软提示底/scrollbar thumb</span>hover bg / soft prompt / scrollbar</div>
+    </div>
+
+    <div class="swatch swatch--accent">
+      <div class="row1"><div class="name"><span class="zh">陶土粉</span>Terra Cotta</div></div>
+      <div class="row2"><span class="num">08</span><span class="token">--accent</span><span class="hex">#D0937F</span><span class="contrast">contrast 4.78</span></div>
+      <div class="row3"><span class="zh">强调/错误条/装饰块/角标/"NEW"</span>emphasis / error bar / badge</div>
+    </div>
+
+    <div class="swatch swatch--accent-light">
+      <span class="tag-light">LIGHT</span>
+      <div class="row1"><div class="name"><span class="zh">陶土粉·浅</span>Terra Tint</div></div>
+      <div class="row2"><span class="num">09</span><span class="token">--accent-light</span><span class="hex">#F0DED7</span><span class="contrast">contrast 9.46</span></div>
+      <div class="row3"><span class="zh">粉底块/agent 错误条/sidebar 装饰</span>pink block / agent error / sidebar decor</div>
+    </div>
+
+    <div class="swatch swatch--info">
+      <div class="row1"><div class="name"><span class="zh">烟蓝</span>Slate Blue</div></div>
+      <div class="row2"><span class="num">10</span><span class="token">--info</span><span class="hex">#88A2B9</span><span class="contrast">contrast 4.64</span></div>
+      <div class="row3"><span class="zh">信息/链接/focus ring/空状态插图</span>info / link / focus / empty state</div>
+    </div>
+
+    <div class="swatch swatch--info-light">
+      <span class="tag-light">LIGHT</span>
+      <div class="row1"><div class="name"><span class="zh">烟蓝·浅</span>Sky Tint</div></div>
+      <div class="row2"><span class="num">11</span><span class="token">--info-light</span><span class="hex">#DBE5ED</span><span class="contrast">contrast 9.64</span></div>
+      <div class="row3"><span class="zh">信息提示底/连中态/sidebar 选中</span>info bg / in-progress / sidebar selected</div>
+    </div>
+
+    <div class="swatch swatch--success">
+      <div class="row1"><div class="name"><span class="zh">苔绿</span>Moss Green</div></div>
+      <div class="row2"><span class="num">12</span><span class="token">--success</span><span class="hex">#A9B59A</span><span class="contrast">contrast 5.72</span></div>
+      <div class="row3"><span class="zh">成功/在线状态/启动指示</span>success / online / launch indicator</div>
+    </div>
+
+    <div class="swatch swatch--success-light">
+      <span class="tag-light">LIGHT</span>
+      <div class="row1"><div class="name"><span class="zh">苔绿·浅</span>Sage Tint</div></div>
+      <div class="row2"><span class="num">13</span><span class="token">--success-light</span><span class="hex">#E6EADF</span><span class="contrast">contrast 10.08</span></div>
+      <div class="row3"><span class="zh">成功提示底/"Start small" 块</span>success bg / start small block</div>
+    </div>
+
+    <div class="swatch swatch--warning">
+      <div class="row1"><div class="name"><span class="zh">麦黄</span>Honey Wheat</div></div>
+      <div class="row2"><span class="num">14</span><span class="token">--warning</span><span class="hex">#D6B06C</span><span class="contrast">contrast 6.03</span></div>
+      <div class="row3"><span class="zh">警告/注意/budget 接近上限</span>warning / budget near limit</div>
+    </div>
+
+    <div class="swatch swatch--warning-light">
+      <span class="tag-light">LIGHT</span>
+      <div class="row1"><div class="name"><span class="zh">麦黄·浅</span>Sand Tint</div></div>
+      <div class="row2"><span class="num">15</span><span class="token">--warning-light</span><span class="hex">#F2E6CC</span><span class="contrast">contrast 9.94</span></div>
+      <div class="row3"><span class="zh">警告提示底/input 警告态</span>warning bg / input warning</div>
+    </div>
+
+    <div class="swatch swatch--danger">
+      <div class="row1"><div class="name"><span class="zh">砖红</span>Brick Clay</div></div>
+      <div class="row2"><span class="num">16</span><span class="token">--danger</span><span class="hex">#CF8275</span><span class="contrast">contrast 4.16</span></div>
+      <div class="row3"><span class="zh">错误/危险操作/关键 alert</span>error / danger / critical alert</div>
+    </div>
+
+    <div class="swatch swatch--danger-light">
+      <span class="tag-light">LIGHT</span>
+      <div class="row1"><div class="name"><span class="zh">砖红·浅</span>Clay Tint</div></div>
+      <div class="row2"><span class="num">17</span><span class="token">--danger-light</span><span class="hex">#F1DDD8</span><span class="contrast">contrast 9.42</span></div>
+      <div class="row3"><span class="zh">错误提示底/删除确认</span>error bg / delete confirm</div>
+    </div>
+
+    <div class="swatch swatch--violet">
+      <div class="row1"><div class="name"><span class="zh">雾紫</span>Dusty Mauve</div></div>
+      <div class="row2"><span class="num">18</span><span class="token">--violet</span><span class="hex">#B6ABBC</span><span class="contrast">contrast 5.59</span></div>
+      <div class="row3"><span class="zh">装饰/标签/agent 角色标识</span>decor / tag / agent role</div>
+    </div>
+
+    <div class="swatch swatch--violet-light">
+      <span class="tag-light">LIGHT</span>
+      <div class="row1"><div class="name"><span class="zh">雾紫·浅</span>Lilac Tint</div></div>
+      <div class="row2"><span class="num">19</span><span class="token">--violet-light</span><span class="hex">#E8E1EB</span><span class="contrast">contrast 9.61</span></div>
+      <div class="row3"><span class="zh">紫色提示底/branch node 装饰</span>purple bg / branch node decor</div>
+    </div>
+
+    <div class="swatch swatch--stone">
+      <div class="row1"><div class="name"><span class="zh">暖灰</span>Warm Stone</div></div>
+      <div class="row2"><span class="num">20</span><span class="token">--stone</span><span class="hex">#CBC3BA</span><span class="contrast">contrast 7.06</span></div>
+      <div class="row3"><span class="zh">次要图标/未激活态/占位</span>secondary icon / inactive / placeholder</div>
+    </div>
+
+    <div class="swatch swatch--stone-light">
+      <span class="tag-light">LIGHT</span>
+      <div class="row1"><div class="name"><span class="zh">暖灰·浅</span>Bone Tint</div></div>
+      <div class="row2"><span class="num">21</span><span class="token">--stone-light</span><span class="hex">#EBE7E2</span><span class="contrast">contrast 10.00</span></div>
+      <div class="row3"><span class="zh">禁用态/占位块/灰底</span>disabled / placeholder / grey bg</div>
+    </div>
+
+    <div class="swatch halftone noise-tag">
+      <span class="tag-light">NOISE</span>
+      <div class="row1"><div class="name"><span class="zh">halftone 底纹</span>Paper Grain</div></div>
+      <div class="row2"><span class="num">22</span><span class="token">body::before</span><span class="hex">SVG noise</span><span class="contrast">0.025 opacity · multiply</span></div>
+      <div class="row3"><span class="zh">螺页背景颗粒 (0.7px 点/18px 间距)</span>page background grain (0.7px / 18px)</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    font-stack: Inter (body) · Space Grotesk (heading) · Literata (display) · Space Mono (mono) &nbsp;·&nbsp; radius: 6/8/10/12/14/16/20/999
+  </div>
+</body>
+</html>

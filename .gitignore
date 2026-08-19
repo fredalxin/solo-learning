@@ -1,0 +1,12 @@
+node_modules/
+dist/
+
+# Runtime learning data and generated task state
+server/data/
+
+# Local generation scratch files
+outputs/
+work/
+
+.DS_Store
+*.log
