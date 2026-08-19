@@ -34,6 +34,8 @@ function extractJson(raw) {
   const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]+?)\s*```\s*$/i);
   if (fenceMatch) {
     try { return JSON.parse(fenceMatch[1]); } catch { /* fall through */ }
+    const repaired = repairJsonQuotes(fenceMatch[1]);
+    if (repaired) { try { return JSON.parse(repaired); } catch { /* fall through */ } }
   }
 
   // 3) Slice from the first { to the last } — handles stray prose around the JSON.
@@ -44,7 +46,81 @@ function extractJson(raw) {
     try { return JSON.parse(candidate); } catch { /* fall through */ }
   }
 
+  // 4) Find the first ```json ... ``` block anywhere — Claude sometimes adds
+  //    trailing prose after the fence, breaking strategy 2.
+  const inlineFence = trimmed.match(/```(?:json)?\s*([\s\S]+?)\s*```/i);
+  if (inlineFence) {
+    try { return JSON.parse(inlineFence[1]); } catch { /* fall through */ }
+    const repaired = repairJsonQuotes(inlineFence[1]);
+    if (repaired) { try { return JSON.parse(repaired); } catch { /* fall through */ } }
+  }
+
+  // 5) Repair common Claude mistakes: unescaped ASCII " inside string values
+  //    (e.g. Chinese emphasis: "运行外壳"). Walk char-by-char, count only the
+  //    quotes that are at JSON syntactic positions, and skip any quote that
+  //    immediately follows a non-key character inside a string.
+  const repaired = repairJsonQuotes(trimmed);
+  if (repaired) {
+    try { return JSON.parse(repaired); } catch { /* fall through */ }
+  }
+
   return null;
+}
+
+/**
+ * Try to fix unescaped ASCII " that Claude occasionally embeds inside JSON
+ * string values (e.g. `"summary": "...把"运行外壳"..."`). Strategy:
+ *   - Track the JSON state machine (string / key / value).
+ *   - When we're inside a string, ASCII " should only end the string at a
+ *     position that looks like a string terminator (followed by `:`, `,`,
+ *     `}`, `]`, or whitespace+those). Otherwise, treat it as content and
+ *     replace with a Chinese smart quote (" or ").
+ * Returns the repaired string, or null when no repair was possible.
+ */
+function repairJsonQuotes(raw) {
+  let result = "";
+  let i = 0;
+  let inString = false;
+  let escape = false;
+  while (i < raw.length) {
+    const c = raw[i];
+    if (escape) { result += c; escape = false; i++; continue; }
+    if (c === "\\") { result += c; escape = true; i++; continue; }
+    if (c === '"') {
+      if (!inString) {
+        // Opening string — keep as-is.
+        result += c;
+        inString = true;
+        i++;
+        continue;
+      }
+      // Already in a string. Decide if this " closes the string or is content.
+      // Peek ahead to see what follows (skip ASCII whitespace).
+      let j = i + 1;
+      while (j < raw.length && (raw[j] === " " || raw[j] === "\t" || raw[j] === "\n" || raw[j] === "\r")) j++;
+      const next = raw[j];
+      // JSON-valid terminators after a string value/key: : , } ]  or EOF.
+      if (next === undefined || next === ":" || next === "," || next === "}" || next === "]") {
+        result += c;
+        inString = false;
+        i++;
+        continue;
+      }
+      // Otherwise this is an unescaped " inside the string body. Replace with
+      // a Chinese smart quote (alternate " / " so pairs look balanced).
+      const smart = (result.match(/[\u201C\u201D]/g)?.length ?? 0) % 2 === 0
+        ? "\u201C"   // "
+        : "\u201D";  // "
+      result += smart;
+      i++;
+      continue;
+    }
+    result += c;
+    i++;
+  }
+  // Only return a candidate if we ended outside a string (otherwise the
+  // original was so broken that the state machine gave up).
+  return inString ? null : result;
 }
 const sharesDir = join(dataDir, "shares");
 const legacyStorePath = join(dataDir, "app-store.json");
@@ -448,7 +524,8 @@ ${revision ? `用户对当前答案的修正要求：${revision}` : ""}
 5. children 正好 3 项。结合用户的学习路径，推荐具体、互补、不重复的下一步问题；问题可以继续快答，也可以适合生成图解。
 6. title 简洁概括答案主题，kicker 使用 2-6 个中文字符表示答案类型。
 7. answerMode 必须为 "quick"。
-8. 只返回符合 JSON Schema 的 JSON，不要输出其他内容。`;
+8. **JSON 字符串值内禁止使用 ASCII 双引号 "**。需要强调术语或短句时，统一使用中文弯引号 ""（左 U+201C、右 U+201D）或直角引号「」。否则 JSON 解析会失败。
+9. 只返回符合 JSON Schema 的 JSON，不要输出其他内容、解释、Markdown 包装或代码块标记。`;
 
   const agentLabel = SUPPORTED_AGENTS.includes(agent) ? agent : "codex";
   const isCodex = agentLabel === "codex";
@@ -468,15 +545,84 @@ ${revision ? `用户对当前答案的修正要求：${revision}` : ""}
     onStage("validating", "校验答案与推荐问题");
     const answer = extractJson(raw);
     if (answer === null || typeof answer !== "object") {
-      throw new Error(
-        `${agentLabel} 输出不是合法 JSON: ${raw.slice(0, 400)}`,
+      // Graceful degradation: Claude/opencode occasionally emit prose or
+      // JSON with unescaped quotes that we can't repair. The text itself is
+      // still a valid answer — fall back to a minimal structured response
+      // carrying the raw text, so the user sees the explanation instead of
+      // a "generation failed" wall. (The 5th extractJson strategy already
+      // tries to repair unescaped quotes before we get here.)
+      console.warn(
+        `[atlas-agent] ${agentLabel} quick-answer output not parseable, ` +
+        `falling back to raw text (${raw.length} chars)`,
       );
+      onStage("finalizing", "写入知识画布");
+      return buildQuickAnswerFallback(raw, question);
     }
     onStage("finalizing", "写入知识画布");
     return answer;
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Build a best-effort quick-answer object from raw agent text when JSON
+ * extraction fails. The text is the answer; we just wrap it so the UI can
+ * still render title / kicker / summary and skip facts+children gracefully.
+ */
+function buildQuickAnswerFallback(raw, question) {
+  // Strip any ```json / ``` fence the agent may have wrapped the text in.
+  const cleaned = String(raw || "")
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```\s*$/, "")
+    .trim();
+  const title = question.length > 24 ? `${question.slice(0, 22)}…` : question;
+  return {
+    title,
+    kicker: "回答",
+    answerMode: "quick",
+    summary: cleaned,
+    facts: [],
+    children: [],
+  };
+}
+
+/**
+ * Build a text-only lesson fallback when the agent's JSON is unparseable OR
+ * the SVG inside it failed sanitization. We still hand back a structurally
+ * valid lesson object so the UI's defensive normalization can render the
+ * summary. The visual is intentionally a tiny empty SVG so the scene-skeleton
+ * shows "no diagram" rather than a hard error.
+ */
+function buildLessonFallback(raw, question, partialLesson = null) {
+  const cleaned = String(raw || "")
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```\s*$/, "")
+    .trim();
+  const title = partialLesson?.title
+    || (question.length > 24 ? `${question.slice(0, 22)}…` : question);
+  return {
+    kicker: partialLesson?.kicker || "图解",
+    title,
+    summary: partialLesson?.summary || cleaned || "本次回答未生成图解，请重新提问。",
+    metaphor: partialLesson?.metaphor || "",
+    facts: Array.isArray(partialLesson?.facts) && partialLesson.facts.length
+      ? partialLesson.facts
+      : [],
+    steps: Array.isArray(partialLesson?.steps) && partialLesson.steps.length
+      ? partialLesson.steps
+      : [],
+    children: Array.isArray(partialLesson?.children) && partialLesson.children.length
+      ? partialLesson.children
+      : [],
+    visual: {
+      type: "flow",
+      center: title,
+      nodes: [],
+      links: [],
+      sceneSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" preserveAspectRatio="xMidYMid meet"></svg>',
+    },
+  };
 }
 
 async function generateLesson(
@@ -551,7 +697,8 @@ ${revision && existingLesson ? `   - 这是一次针对现有 SVG 的定向修�
    - 不使用外部资源、script、foreignObject、事件属性或 data URL。
    - visual.nodes 中每个节点都要在 SVG 中有对应的可点击分组，格式为 class="scene-hotspot hotspot-N"，N 是节点下标。
    - 有知识含义的对象可添加 data-label。背景和纯装饰元素不要添加。
-8. 只返回符合 JSON Schema 的 JSON，不要输出其他内容。`;
+8. **JSON 字符串值内禁止使用 ASCII 双引号 "**。需要强调术语或短句时，统一使用中文弯引号 ""（左 U+201C、右 U+201D）或直角引号「」。否则 JSON 解析会失败。
+9. 只返回符合 JSON Schema 的 JSON，不要输出其他内容、解释、Markdown 包装或代码块标记。`;
 
   const agentLabel = SUPPORTED_AGENTS.includes(agent) ? agent : "codex";
   const isCodex = agentLabel === "codex";
@@ -571,13 +718,38 @@ ${revision && existingLesson ? `   - 这是一次针对现有 SVG 的定向修�
     onStage("validating", "校验知识结构、SVG 与交互热点");
     const lesson = extractJson(raw);
     if (!lesson || typeof lesson !== "object") {
-      throw new Error(
-        `${agentLabel} 输出不是合法 JSON: ${raw.slice(0, 400)}`,
+      // Same graceful-degradation policy as generateQuickAnswer: the text is
+      // still a valid explanation, so wrap it as a text-only lesson. The
+      // visual will be missing but the user sees the answer instead of a
+      // hard failure that would force them to re-run a 10-minute lesson.
+      console.warn(
+        `[atlas-agent] ${agentLabel} lesson output not parseable, ` +
+        `falling back to text-only (${raw.length} chars)`,
       );
+      onStage("finalizing", "整理结果并写入知识画布");
+      return buildLessonFallback(raw, question);
     }
-    lesson.visual.sceneSvg = sanitizeSceneSvg(lesson.visual.sceneSvg);
+    // Validate the SVG is structurally sound before returning; if it's not,
+    // strip the visual and return text-only instead of failing the whole
+    // generation.
+    let sceneSvg = "";
+    try {
+      sceneSvg = sanitizeSceneSvg(lesson.visual?.sceneSvg);
+    } catch (svgError) {
+      console.warn(
+        `[atlas-agent] ${agentLabel} lesson SVG invalid, ` +
+        `returning text-only (${svgError.message})`,
+      );
+      return buildLessonFallback(raw, question, {
+        ...lesson,
+        title: lesson.title || question,
+        summary: lesson.summary || "",
+        facts: Array.isArray(lesson.facts) ? lesson.facts : [],
+        children: Array.isArray(lesson.children) ? lesson.children : [],
+      });
+    }
     onStage("finalizing", "整理结果并写入知识画布");
-    return { ...lesson, answerMode: "visual" };
+    return { ...lesson, visual: { ...lesson.visual, sceneSvg }, answerMode: "visual" };
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
