@@ -10,7 +10,7 @@
 //   - multica server/pkg/agent/opencode.go (opencode run --format json)
 //
 // Unlike solo (long-lived persistent sessions) or alook (AsyncIterable stream
-// for SSE), fast-learning wants a one-shot: send prompt, get a single string
+// for SSE), Solo Learning wants a one-shot: send prompt, get a single string
 // of accumulated assistant text. We expose that as Promise<AgentResult>.
 
 import { CodexBackend } from "./codex.mjs";

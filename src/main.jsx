@@ -9,7 +9,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
-  Copy,
+  Download,
   GripVertical,
   Link2,
   Menu,
@@ -18,7 +18,6 @@ import {
   RefreshCw,
   Search,
   Settings2,
-  Share2,
   Sparkles,
   Trash2,
   X,
@@ -69,6 +68,7 @@ const VISUAL_CONFIG_OPTIONS = {
     ["technical", "工业制图"],
     ["infographic", "科普信息图"],
     ["line-art", "精细线稿"],
+    ["handdrawn", "怪诞手绘"],
     ["minimal", "极简图解"],
   ],
   tone: [
@@ -617,6 +617,23 @@ function sortNodeSiblings(items) {
   return items.slice().sort(compareNodeOrder);
 }
 
+function getNodesInTreeOrder(items) {
+  const childrenByParent = new Map();
+  items.forEach((node) => {
+    const parentId = node.parentId || null;
+    if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+    childrenByParent.get(parentId).push(node);
+  });
+  childrenByParent.forEach((children) => children.sort(compareNodeOrder));
+  const ordered = [];
+  const visit = (node) => {
+    ordered.push(node);
+    (childrenByParent.get(node.id) || []).forEach(visit);
+  };
+  (childrenByParent.get(null) || []).forEach(visit);
+  return ordered;
+}
+
 function wrapConnectionTitle(title, maxLineWidth = 144) {
   const lines = [];
   let line = "";
@@ -729,20 +746,137 @@ async function loadShareFromServer(shareId) {
   });
 }
 
-function createSharePath(shareId, title) {
-  const slug = String(title || "分享画布")
-    .normalize("NFKC")
-    .replace(/[/?#%\\]+/g, " ")
-    .replace(/\s+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80) || "分享画布";
-  return `/share/${shareId}/${slug}`;
-}
-
 function getShareIdFromLocation() {
   const legacyShareId = new URLSearchParams(window.location.search).get("share") || "";
   if (/^[a-f0-9]{32}$/.test(legacyShareId)) return legacyShareId;
   return window.location.pathname.match(/^\/share\/([a-f0-9]{32})(?:\/|$)/)?.[1] || "";
+}
+
+function startAnimatedFavicon() {
+  const favicon = document.querySelector('link[rel="icon"]');
+  if (!favicon || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const signalPath = [[32, 32], [27, 28], [22, 23], [17, 19], [32, 32], [27, 37], [22, 42], [17, 47], [32, 32], [38, 28], [44, 25], [49, 22]];
+  let frame = 0;
+  const render = () => {
+    const [x, y] = signalPath[frame++ % signalPath.length];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#f8f3e8" stroke="#cfc1ad" stroke-width="1.5"/><g fill="none" stroke="#9a6c5f" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M32 32 17 19M32 32 17 47M32 32 49 22"/><circle cx="32" cy="32" r="6.5" fill="#d0937f" stroke="#d0937f"/><circle cx="17" cy="19" r="3.5" fill="#f8f3e8"/><circle cx="17" cy="47" r="3.5" fill="#f8f3e8"/><circle cx="49" cy="22" r="3.5" fill="#f8f3e8"/></g><circle cx="${x}" cy="${y}" r="2.4" fill="#d6b06c"/></svg>`;
+    favicon.href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  };
+  render();
+  setInterval(render, 420);
+}
+
+function createCanvasExportHtml(title, worldElement, camera) {
+  const world = worldElement.cloneNode(true);
+  world.classList.remove("first-topic-enter", "is-focused");
+  world.querySelectorAll("button, form, input, textarea").forEach((element) => element.remove());
+  world.querySelectorAll("[data-camera-target]").forEach((element) => {
+    element.removeAttribute("data-camera-target");
+  });
+  world.querySelectorAll(".generated-scene").forEach((scene) => {
+    scene.classList.remove("is-paused");
+    scene.classList.add("is-active");
+  });
+  const safeTitle = String(title || "Solo Learning")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+  const css = [...document.styleSheets].map((sheet) => {
+    try {
+      return [...sheet.cssRules].map((rule) => rule.cssText).join("\n");
+    } catch {
+      return "";
+    }
+  }).join("\n").replace(/@import[^;]+;\s*/g, "");
+  const initialCamera = JSON.stringify(normalizeCamera(camera));
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${safeTitle} · Solo Learning</title>
+  <style>
+${css}
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body { background: var(--canvas); }
+#export-viewport { position: fixed; inset: 0; overflow: hidden; touch-action: none; cursor: grab; }
+#export-viewport.is-dragging { cursor: grabbing; }
+#export-viewport .canvas-world { contain: layout style; }
+#export-viewport .knowledge-board { content-visibility: visible; }
+#export-viewport button, #export-viewport form { display: none !important; }
+.export-title { position: fixed; z-index: 20; left: 18px; top: 18px; max-width: calc(100vw - 180px); padding: 9px 13px; overflow: hidden; border: 1px solid var(--line); background: rgba(255,253,251,.92); box-shadow: var(--shadow-soft); color: var(--ink); font-family: var(--font-display); font-size: 14px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; border-radius: var(--radius-sm); pointer-events: none; }
+.export-controls { position: fixed; z-index: 20; right: 18px; bottom: 18px; display: flex; gap: 6px; padding: 5px; border: 1px solid var(--line); background: rgba(255,253,251,.92); box-shadow: var(--shadow-soft); border-radius: var(--radius-sm); }
+.export-controls button { width: 34px; height: 34px; border: 0; background: transparent; color: var(--ink); cursor: pointer; font-size: 17px; border-radius: var(--radius-xs); }
+.export-controls button:hover { background: var(--primary); }
+  </style>
+</head>
+<body>
+  <div class="export-title">${safeTitle}</div>
+  <main id="export-viewport">${world.outerHTML}</main>
+  <nav class="export-controls" aria-label="画布控制">
+    <button type="button" data-action="out" title="缩小">−</button>
+    <button type="button" data-action="reset" title="适应全部">⌂</button>
+    <button type="button" data-action="in" title="放大">＋</button>
+  </nav>
+  <script>
+    (() => {
+      const viewport = document.getElementById("export-viewport");
+      const world = viewport.querySelector(".canvas-world");
+      let camera = ${initialCamera};
+      let drag = null;
+      const apply = () => {
+        world.style.transform = "translate3d(" + camera.x + "px," + camera.y + "px,0) scale(" + camera.scale + ")";
+      };
+      const zoom = (factor, x = viewport.clientWidth / 2, y = viewport.clientHeight / 2) => {
+        const next = Math.min(1.35, Math.max(.08, camera.scale * factor));
+        const worldX = (x - camera.x) / camera.scale;
+        const worldY = (y - camera.y) / camera.scale;
+        camera = { x: x - worldX * next, y: y - worldY * next, scale: next };
+        apply();
+      };
+      const fit = () => {
+        const boards = [...world.querySelectorAll(".knowledge-board")];
+        if (!boards.length) return;
+        const left = Math.min(...boards.map((board) => parseFloat(board.style.left) || 0));
+        const top = Math.min(...boards.map((board) => parseFloat(board.style.top) || 0));
+        const right = Math.max(...boards.map((board) => (parseFloat(board.style.left) || 0) + (parseFloat(board.style.width) || 1270)));
+        const bottom = Math.max(...boards.map((board) => (parseFloat(board.style.top) || 0) + (parseFloat(board.style.height) || 480)));
+        const scale = Math.min(1, (viewport.clientWidth - 80) / (right - left), (viewport.clientHeight - 80) / (bottom - top));
+        camera = { x: (viewport.clientWidth - (left + right) * scale) / 2, y: (viewport.clientHeight - (top + bottom) * scale) / 2, scale };
+        apply();
+      };
+      viewport.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        zoom(Math.exp(-Math.max(-160, Math.min(160, event.deltaY)) * .002), event.clientX, event.clientY);
+      }, { passive: false });
+      viewport.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
+        drag = { id: event.pointerId, x: event.clientX, y: event.clientY, cameraX: camera.x, cameraY: camera.y };
+        viewport.setPointerCapture(event.pointerId);
+        viewport.classList.add("is-dragging");
+      });
+      viewport.addEventListener("pointermove", (event) => {
+        if (!drag || drag.id !== event.pointerId) return;
+        camera.x = drag.cameraX + event.clientX - drag.x;
+        camera.y = drag.cameraY + event.clientY - drag.y;
+        apply();
+      });
+      const stopDrag = () => { drag = null; viewport.classList.remove("is-dragging"); };
+      viewport.addEventListener("pointerup", stopDrag);
+      viewport.addEventListener("pointercancel", stopDrag);
+      document.querySelector(".export-controls").addEventListener("click", (event) => {
+        const action = event.target.dataset.action;
+        if (action === "in") zoom(1.2);
+        if (action === "out") zoom(1 / 1.2);
+        if (action === "reset") fit();
+      });
+      apply();
+    })();
+  </script>
+</body>
+</html>`;
 }
 
 function wait(ms) {
@@ -974,10 +1108,6 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
   const [deleteNodeTarget, setDeleteNodeTarget] = useState(null);
   const [draggedNodeId, setDraggedNodeId] = useState(null);
   const [nodeDropTarget, setNodeDropTarget] = useState(null);
-  const [shareDialogOpen, setShareDialogOpen] = useState(false);
-  const [shareUrl, setShareUrl] = useState("");
-  const [shareCreating, setShareCreating] = useState(false);
-  const [shareCopied, setShareCopied] = useState(false);
   const [firstTopicTransition, setFirstTopicTransition] = useState(null);
   const [createdNodeNotice, setCreatedNodeNotice] = useState(null);
   const [camera, setCamera] = useState(() => normalizeCamera(initialWorkspace.camera));
@@ -1193,7 +1323,7 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
     const startedAt = performance.now();
     const step = (now) => {
       const progress = Math.min(1, (now - startedAt) / duration);
-      const eased = 1 - (1 - progress) ** 3;
+      const eased = progress * progress * (3 - 2 * progress);
       applyWorldTransform({
         x: start.x + (target.x - start.x) * eased,
         y: start.y + (target.y - start.y) * eased,
@@ -1751,85 +1881,35 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
     setNodeDropTarget(null);
   };
 
-  const createShareLink = async () => {
-    if (readOnly || !activeWorkspace) return;
-    setShareCreating(true);
-    setShareCopied(false);
-    try {
-      const workspace = {
-        ...activeWorkspace,
-        nodes: nodesRef.current,
-        camera: normalizeCamera(cameraRef.current),
-        visualConfig: normalizeVisualConfig(visualConfigRef.current),
-      };
-      const response = await apiFetch("/api/shares", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspace }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "分享链接生成失败");
-      const url = new URL(window.location.href);
-      url.search = "";
-      url.hash = "";
-      url.pathname = createSharePath(result.shareId, workspace.title);
-      setShareUrl(decodeURI(url.toString()));
-      setShareDialogOpen(true);
-    } catch (shareError) {
-      setError(shareError.message || "分享链接生成失败");
-    } finally {
-      setShareCreating(false);
+  const exportCurrentWorkspace = async () => {
+    if (!activeWorkspace || !nodes.length || !worldRef.current) return;
+    if (inspector) {
+      setInspector(null);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     }
-  };
-
-  const copyShareLink = async () => {
-    if (!shareUrl) return;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(shareUrl);
-      } else {
-        const textarea = document.createElement("textarea");
-        textarea.value = shareUrl;
-        textarea.style.position = "fixed";
-        textarea.style.opacity = "0";
-        document.body.appendChild(textarea);
-        textarea.select();
-        const copied = document.execCommand("copy");
-        textarea.remove();
-        if (!copied) throw new Error("copy failed");
-      }
-      setShareCopied(true);
-      setTimeout(() => setShareCopied(false), 1800);
-    } catch {
-      try {
-        const textarea = document.createElement("textarea");
-        textarea.value = shareUrl;
-        textarea.style.position = "fixed";
-        textarea.style.opacity = "0";
-        document.body.appendChild(textarea);
-        textarea.select();
-        const copied = document.execCommand("copy");
-        textarea.remove();
-        if (!copied) throw new Error("copy failed");
-        setShareCopied(true);
-        setTimeout(() => setShareCopied(false), 1800);
-      } catch {
-        setError("复制失败，请手动选择链接");
-      }
-    }
+    const html = createCanvasExportHtml(
+      activeWorkspace.title,
+      worldRef.current,
+      cameraRef.current,
+    );
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${String(activeWorkspace.title || "solo-learning").replace(/[\\/:*?"<>|]/g, "-")}.html`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   useEffect(() => {
-    if (!deleteTarget && !deleteNodeTarget && !shareDialogOpen) return undefined;
+    if (!deleteTarget && !deleteNodeTarget) return undefined;
     const closeOnEscape = (event) => {
       if (event.key !== "Escape") return;
       setDeleteTarget(null);
       setDeleteNodeTarget(null);
-      setShareDialogOpen(false);
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [deleteTarget, deleteNodeTarget, shareDialogOpen]);
+  }, [deleteTarget, deleteNodeTarget]);
 
   const createTopic = async (question, parent = null, elementLabel = "", options = {}) => {
     const clean = question.trim();
@@ -2116,8 +2196,32 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
       x: viewport.clientWidth / 2 - (node.x + boardWidth / 2) * nextScale,
       y: contentTop + availableHeight / 2 - (node.y + boardHeight / 2) * nextScale,
       scale: nextScale,
-    }, 400, nodeId);
+    }, 520, nodeId);
   };
+
+  useEffect(() => {
+    const navigateCards = (event) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement
+        && (target.isContentEditable || target.closest("input, textarea, select, [contenteditable='true']"))
+      ) return;
+      const currentNodes = getNodesInTreeOrder(nodesRef.current);
+      if (!currentNodes.length) return;
+      const currentIndex = currentNodes.findIndex((node) => node.id === activeId);
+      const nextIndex = event.key === "ArrowRight"
+        ? Math.min(currentNodes.length - 1, currentIndex + 1)
+        : Math.max(0, currentIndex < 0 ? 0 : currentIndex - 1);
+      if (nextIndex === currentIndex) return;
+      event.preventDefault();
+      setInspector(null);
+      focusNode(currentNodes[nextIndex].id, 1);
+    };
+    window.addEventListener("keydown", navigateCards);
+    return () => window.removeEventListener("keydown", navigateCards);
+  }, [activeId, nodes]);
 
   const getNodeVisibleRatio = (nodeId) => {
     const viewportRect = canvasRef.current?.getBoundingClientRect();
@@ -2366,20 +2470,21 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
         <div className="sidebar-title">
           <div>
             <div className="sidebar-brand">
-              <span className="sidebar-learning-mode" aria-label="好好看好好学" tabIndex={0}>
-                <svg className="learning-book-icon" viewBox="0 -4 26 23" aria-hidden="true">
-                  <path className="learning-book-cover" d="M2 3.2C5.8 2.2 9 2.8 12 5v12c-3-2.2-6.2-2.8-10-1.8Z" />
-                  <path className="learning-book-cover" d="M22 3.2C18.2 2.2 15 2.8 12 5v12c3-2.2 6.2-2.8 10-1.8Z" />
-                  <path className="learning-book-spine" d="M12 5v12" />
-                  <path className="learning-book-page learning-book-page-a" d="M12 5c2.8-2 5.6-2.6 8.7-1.9v11.1c-3.1-.6-5.9 0-8.7 2Z" />
-                  <path className="learning-book-page learning-book-page-b" d="M12 5c2.8-2 5.6-2.6 8.7-1.9v11.1c-3.1-.6-5.9 0-8.7 2Z" />
-                  <path className="learning-book-bolt" d="M20.8-3.2 16.8 4.2h3.3l-1.6 6.5 6.4-8.2h-3.5l2.3-5.1Z" />
+              <span className="sidebar-learning-mode" aria-label="Solo" tabIndex={0}>
+                <svg className="solo-logo-icon" viewBox="0 0 64 64" aria-hidden="true">
+                  <path className="solo-logo-lines" d="M32 32 17 19M32 32 17 47M32 32 49 22" />
+                  <circle className="solo-logo-core" cx="32" cy="32" r="7" />
+                  <circle className="solo-logo-node solo-logo-node-a" cx="17" cy="19" r="4" />
+                  <circle className="solo-logo-node solo-logo-node-b" cx="17" cy="47" r="4" />
+                  <circle className="solo-logo-node solo-logo-node-c" cx="49" cy="22" r="4" />
                 </svg>
-                <span role="tooltip">好好看好好学</span>
+                <span role="tooltip">Solo</span>
               </span>
-              <h2>Fast Learning</h2>
+              <div className="sidebar-brand-copy">
+                <h2>Solo Learning</h2>
+                <p>对知识产生好奇心</p>
+              </div>
             </div>
-            <p>从一个问题开始快速建立领域认知</p>
           </div>
           <div className="sidebar-title-actions">
             <button className="icon-button sidebar-close" onClick={() => setSidebarOpen(false)} title="关闭">
@@ -2485,17 +2590,18 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
                 <div className="question-navigation-title-row">
                   <div className="question-navigation-title">
                     <HoverFullTitle as="strong" text={activeWorkspace?.title || "新问题"} />
-                    <span>{nodes.length} 个节点</span>
                   </div>
+                  <span className="workspace-node-count">{nodes.length} 个节点</span>
                   <button
                     type="button"
-                    className="workspace-share"
-                    title="分享只读画布"
-                    aria-label="分享只读画布"
-                    disabled={!nodes.length || shareCreating}
-                    onClick={createShareLink}
+                    className="workspace-export"
+                    title="导出演示 HTML"
+                    aria-label="导出演示 HTML"
+                    disabled={!nodes.length}
+                    onClick={exportCurrentWorkspace}
                   >
-                    <Share2 size={15} />
+                    <Download size={14} />
+                    <span>Export</span>
                   </button>
                 </div>
               </div>
@@ -3133,40 +3239,6 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
             </div>
           );
         })()}
-        {!readOnly && shareDialogOpen && (
-          <div
-            className="delete-backdrop"
-            role="presentation"
-            onPointerDown={(event) => {
-              if (event.target === event.currentTarget) setShareDialogOpen(false);
-            }}
-          >
-            <section
-              className="share-dialog"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="share-dialog-title"
-            >
-              <header>
-                <div>
-                  <strong id="share-dialog-title">分享只读画布</strong>
-                  <span>任何获得链接的人都可以查看，但不能编辑</span>
-                </div>
-                <button type="button" title="关闭" onClick={() => setShareDialogOpen(false)}>
-                  <X size={16} />
-                </button>
-              </header>
-              <div className="share-link-field">
-                <Link2 size={15} />
-                <input value={shareUrl} readOnly aria-label="分享链接" />
-                <button type="button" onClick={copyShareLink}>
-                  <Copy size={14} />{shareCopied ? "已复制" : "复制"}
-                </button>
-              </div>
-              <p>链接保存的是当前画布快照，之后修改原画布不会影响已分享内容。</p>
-            </section>
-          </div>
-        )}
       </main>
     </div>
   );
@@ -3443,6 +3515,7 @@ function getVisualConfigOptionDescription(groupKey, value) {
       technical: "强调尺寸、结构和工程关系",
       infographic: "图形、数据与短标签组合表达",
       "line-art": "通过精细轮廓和局部线条解释",
+      handdrawn: "白底抖动线稿、留白和动作隐喻",
       minimal: "只保留最关键的对象和关系",
     },
     tone: {
@@ -3553,6 +3626,21 @@ function VisualConfigOptionPreview({ groupKey, value }) {
           <path d="m44 13 3 6m17 0-5 5m8 15-7-1m-7 16-3-7m-20 8 4-7m-12-7 7-2m-5-17 7 4" />
           <path d="M73 21h42M73 31h34M73 41h42M73 51h27" />
         </g>
+      </svg>
+    );
+    if (value === "handdrawn") return (
+      <svg {...commonProps}>
+        <rect width="132" height="72" fill="#fff" />
+        <g fill="none" stroke="#171717" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="m13 53 17-2 1-26 33-2 2 28 18 2" />
+          <path d="m38 36 10-7 9 7-9 8Z" />
+          <path d="M93 42c-1-11 14-13 16-2 2 10-12 15-16 2Z" fill="#171717" />
+          <path d="m97 50-3 12m10-12 5 11m-14-17-9 7m21-8 10-6" />
+        </g>
+        <circle cx="99" cy="39" r="1.5" fill="#fff" /><circle cx="105" cy="39" r="1.5" fill="#fff" />
+        <path d="M69 37c8-7 12-6 18-1" fill="none" stroke="#d77845" strokeWidth="2.5" strokeLinecap="round" />
+        <path d="m83 32 5 4-5 3" fill="none" stroke="#d77845" strokeWidth="2" />
+        <path d="M15 14h25" stroke="#cf5d52" strokeWidth="2" /><path d="M91 18h24" stroke="#5d8ea3" strokeWidth="2" />
       </svg>
     );
     return (
@@ -4313,59 +4401,6 @@ function disableUnsafeSvgRotations(root) {
   });
 }
 
-function promoteSvgTextLayer(root) {
-  const svg = root?.querySelector("svg");
-  if (!svg) return;
-  svg.querySelector(":scope > .scene-text-overlay")?.remove();
-  const texts = [...svg.querySelectorAll("text")].filter((text) => (
-    !text.closest(".scene-text-overlay")
-    && text.getAttribute("aria-hidden") !== "true"
-  ));
-  if (!texts.length) return;
-  const rootMatrix = svg.getScreenCTM();
-  if (!rootMatrix) return;
-  const overlay = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  overlay.setAttribute("class", "scene-text-overlay");
-  overlay.setAttribute("aria-hidden", "true");
-  overlay.setAttribute("pointer-events", "none");
-  texts.forEach((text) => {
-    const textMatrix = text.getScreenCTM();
-    if (!textMatrix) return;
-    const matrix = rootMatrix.inverse().multiply(textMatrix);
-    const clone = text.cloneNode(true);
-    clone.querySelectorAll("[id]").forEach((element) => element.removeAttribute("id"));
-    clone.removeAttribute("id");
-    clone.removeAttribute("data-label");
-    clone.setAttribute(
-      "transform",
-      `matrix(${matrix.a} ${matrix.b} ${matrix.c} ${matrix.d} ${matrix.e} ${matrix.f})`,
-    );
-    clone.setAttribute("pointer-events", "none");
-    const computed = getComputedStyle(text);
-    [
-      "font-family",
-      "font-size",
-      "font-style",
-      "font-weight",
-      "letter-spacing",
-      "text-anchor",
-      "dominant-baseline",
-      "fill",
-      "fill-opacity",
-      "stroke",
-      "stroke-width",
-      "stroke-linejoin",
-      "paint-order",
-      "opacity",
-    ].forEach((property) => {
-      const value = computed.getPropertyValue(property);
-      if (value) clone.style.setProperty(property, value);
-    });
-    overlay.appendChild(clone);
-  });
-  if (overlay.childNodes.length) svg.appendChild(overlay);
-}
-
 function setSceneAnimationPlayback(root, playing) {
   const svg = root?.querySelector("svg");
   if (!svg) return;
@@ -4408,7 +4443,6 @@ function AnimatedExplainer({ topic, summary, questions, palette, visual, active,
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       disableUnsafeSvgRotations(sceneRef.current);
-      promoteSvgTextLayer(sceneRef.current);
       setSceneAnimationPlayback(sceneRef.current, active);
     });
     return () => cancelAnimationFrame(frame);
@@ -4680,8 +4714,8 @@ function HoverFullTitle({ text, as: Tag = "span" }) {
 }
 
 const rootElement = document.getElementById("root");
-const appRoot = window.__ATLAS_ROOT__ || createRoot(rootElement);
-window.__ATLAS_ROOT__ = appRoot;
+const appRoot = window.__SOLO_ROOT__ || createRoot(rootElement);
+window.__SOLO_ROOT__ = appRoot;
 
 class AppErrorBoundary extends React.Component {
   state = { error: null };
@@ -4735,7 +4769,7 @@ async function bootstrapApp() {
       : await loadStoreFromServer();
     if (readOnly) {
       const sharedTitle = initialStore.workspaces[0]?.title;
-      if (sharedTitle) document.title = `${sharedTitle} - Fast Learning`;
+      if (sharedTitle) document.title = `${sharedTitle} - Solo Learning`;
     }
     appRoot.render(
       <AppErrorBoundary>
@@ -4755,4 +4789,5 @@ async function bootstrapApp() {
   }
 }
 
+startAnimatedFavicon();
 bootstrapApp();

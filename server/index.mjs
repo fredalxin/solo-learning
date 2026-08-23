@@ -11,6 +11,14 @@ const schemaPath = join(root, "server", "lesson.schema.json");
 const quickAnswerSchemaPath = join(root, "server", "quick-answer.schema.json");
 const dataDir = join(root, "server", "data");
 const usersDir = join(dataDir, "users");
+const cliAgentIndex = process.argv.indexOf("--agent");
+const configuredAgent = process.env.SOLO_DEFAULT_AGENT
+  || process.env.ATLAS_DEFAULT_AGENT
+  || (cliAgentIndex >= 0 ? process.argv[cliAgentIndex + 1] : "")
+  || "codex";
+if (!SUPPORTED_AGENTS.includes(configuredAgent)) {
+  throw new Error(`Unknown default agent: ${configuredAgent} (supported: ${SUPPORTED_AGENTS.join(", ")})`);
+}
 
 /**
  * Try to extract a JSON object from raw agent output. Agents (esp. claude /
@@ -126,7 +134,7 @@ const sharesDir = join(dataDir, "shares");
 const legacyStorePath = join(dataDir, "app-store.json");
 const legacyTasksPath = join(dataDir, "lesson-tasks.json");
 const legacyOwnerPath = join(dataDir, "legacy-owner.txt");
-const port = Number(process.env.ATLAS_API_PORT || 8787);
+const port = Number(process.env.SOLO_API_PORT || process.env.ATLAS_API_PORT || 8787);
 const userStates = new Map();
 let persistenceQueue = Promise.resolve();
 
@@ -379,7 +387,7 @@ function parseLessonInput(body) {
     : null;
   const answerMode = body.answerMode === "quick" ? "quick" : "visual";
   const requestedAgent = typeof body.agent === "string" ? body.agent.trim().toLowerCase() : "";
-  const agent = SUPPORTED_AGENTS.includes(requestedAgent) ? requestedAgent : "claude";
+  const agent = SUPPORTED_AGENTS.includes(requestedAgent) ? requestedAgent : configuredAgent;
   if (!question || question.length > 500) {
     throw new Error("问题不能为空，且不能超过 500 个字符");
   }
@@ -460,7 +468,7 @@ function startLessonTask(state, taskId, input) {
       void persistTasks(state);
     })
     .catch((error) => {
-      console.error("[atlas-agent]", error);
+      console.error("[solo-agent]", error);
       setStage("failed", "Agent 执行失败");
       Object.assign(task, {
         status: "failed",
@@ -499,9 +507,9 @@ async function generateQuickAnswer(
   onStage = () => {},
 ) {
   onStage("preparing", "整理问题并提取直接答案");
-  const tempDir = await mkdtemp(join(tmpdir(), "atlas-quick-agent-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "solo-quick-agent-"));
   const outputPath = join(tempDir, "answer.json");
-  const prompt = `你是 Fast Learning 的快问快答 Agent。请直接、准确、通俗地回答用户的问题，不生成 SVG；使用清晰但克制的 Markdown 组织一篇可独立阅读的解释。
+  const prompt = `你是 Solo Learning 的快问快答 Agent。请直接、准确、通俗地回答用户的问题，不生成 SVG；使用清晰但克制的 Markdown 组织一篇可独立阅读的解释。
 
 用户问题：${question}
 ${context ? `相关上下文：${context}` : ""}
@@ -552,7 +560,7 @@ ${revision ? `用户对当前答案的修正要求：${revision}` : ""}
       // a "generation failed" wall. (The 5th extractJson strategy already
       // tries to repair unescaped quotes before we get here.)
       console.warn(
-        `[atlas-agent] ${agentLabel} quick-answer output not parseable, ` +
+        `[solo-agent] ${agentLabel} quick-answer output not parseable, ` +
         `falling back to raw text (${raw.length} chars)`,
       );
       onStage("finalizing", "写入知识画布");
@@ -636,7 +644,7 @@ async function generateLesson(
   onStage = () => {},
 ) {
   onStage("preparing", "整理问题、上下文与视觉要求");
-  const tempDir = await mkdtemp(join(tmpdir(), "atlas-agent-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "solo-agent-"));
   const outputPath = join(tempDir, "lesson.json");
   const prompt = `你是 Atlas 的视觉课程生成 Agent。请把用户的问题转化为准确、易懂、可继续探索的中文微型课程。
 
@@ -650,6 +658,14 @@ ${Object.keys(visualConfig).length ? `当前画布统一视觉配置：
 - 色调：${visualConfig.tone || "跟随内容"}
 - 领域：${visualConfig.domain || "自动识别"}
 标记为“自动选择”“跟随内容”或“自动识别”的项目不是固定风格，必须根据本轮问题重新判断。只有用户明确选择的非自动项目才是高优先级约束。` : ""}
+${visualConfig.style === "怪诞手绘" ? `怪诞手绘专用要求：
+- 使用纯白背景，不要纸纹、米色底、渐变、阴影或科技感界面。
+- 以黑色细手绘线稿为主；路径轻微不规则，使用圆角端点和连接，避免机械、精致矢量感。
+- 保持至少约 35% 留白，主体只占画面约 40%-60%；一张图只解释一个核心机制或隐喻。
+- 把抽象概念转成一个具体物理动作和 1-2 个低科技物件；安排一个黑色小人亲自执行核心动作，而不是站在旁边装饰。小人使用白点眼、细手脚、严肃空表情，不要可爱吉祥物感。
+- 仅用少量红、橙、蓝作强调：橙色表示主路径，红色表示重点或结果，蓝色表示补充状态。中文短批注最多 5-8 处，每处 2-8 字。
+- 不要 PPT 信息图、正式流程图、复杂架构图、课程页或左上角类型标题；但仍须满足本任务要求的 4-6 个 scene-hotspot 交互对象。
+- 每次根据当前问题重新发明隐喻，不复用固定机器、角色动作或案例构图。` : ""}
 ${revision ? `用户对当前 SVG 的修正要求：${revision}` : ""}
 ${revision && existingLesson ? `当前图解信息（仅用于识别需要修正的内容）：
 ${JSON.stringify(existingLesson)}` : ""}
@@ -723,7 +739,7 @@ ${revision && existingLesson ? `   - 这是一次针对现有 SVG 的定向修�
       // visual will be missing but the user sees the answer instead of a
       // hard failure that would force them to re-run a 10-minute lesson.
       console.warn(
-        `[atlas-agent] ${agentLabel} lesson output not parseable, ` +
+        `[solo-agent] ${agentLabel} lesson output not parseable, ` +
         `falling back to text-only (${raw.length} chars)`,
       );
       onStage("finalizing", "整理结果并写入知识画布");
@@ -737,7 +753,7 @@ ${revision && existingLesson ? `   - 这是一次针对现有 SVG 的定向修�
       sceneSvg = sanitizeSceneSvg(lesson.visual?.sceneSvg);
     } catch (svgError) {
       console.warn(
-        `[atlas-agent] ${agentLabel} lesson SVG invalid, ` +
+        `[solo-agent] ${agentLabel} lesson SVG invalid, ` +
         `returning text-only (${svgError.message})`,
       );
       return buildLessonFallback(raw, question, {
@@ -813,7 +829,7 @@ function sanitizeSceneSvg(svg) {
 
 const server = createServer(async (request, response) => {
   if (request.method === "GET" && request.url === "/api/health") {
-    json(response, 200, { ok: true, agents: SUPPORTED_AGENTS, defaultAgent: "claude", renderer: "svg" });
+    json(response, 200, { ok: true, agents: SUPPORTED_AGENTS, defaultAgent: configuredAgent, renderer: "svg" });
     return;
   }
 
@@ -936,7 +952,7 @@ const server = createServer(async (request, response) => {
       : await generateLesson(question, context, revision, existingLesson, learningHistory, visualConfig, agent);
     json(response, 200, lesson);
   } catch (error) {
-    console.error("[atlas-agent]", error);
+    console.error("[solo-agent]", error);
     json(response, 500, { error: error.message || "Agent 生成失败" });
   }
 });

@@ -5,7 +5,7 @@
 // out of the stream-json event stream.
 //
 // Reference: alook/src/cli/daemon/agent/claude.ts (260 lines, same shape).
-// We skip the AsyncIterable/SSE plumbing — fast-learning wants a single
+// We skip the AsyncIterable/SSE plumbing — Solo Learning wants a single
 // accumulated string, not a live event feed.
 
 import { spawn } from "node:child_process";

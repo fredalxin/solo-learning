@@ -2,7 +2,7 @@
 //
 // Spawns `codex exec` in a child project cwd, pipes the prompt through stdin,
 // and reads the final JSON message from --output-last-message. Mirrors the
-// behaviour of fast-learning's previous inline spawn at index.mjs:416 / 563.
+// behaviour of Solo Learning's previous inline spawn at index.mjs:416 / 563.
 //
 // Schema enforcement is done by codex itself via --output-schema; we do not
 // need to add anything to the prompt. The result.output is the raw text from
@@ -25,6 +25,9 @@ export class CodexBackend {
    */
   execute(prompt, options) {
     const { cwd, timeoutMs, env, schemaPath, outputPath } = options;
+    const model = process.env.CODEX_MODEL || "gpt-5.6-sol";
+    const reasoningEffort = process.env.CODEX_REASONING_EFFORT || "medium";
+    const serviceTier = process.env.CODEX_SERVICE_TIER || "priority";
     if (!schemaPath || !outputPath) {
       return Promise.resolve({
         status: "failed",
@@ -40,6 +43,12 @@ export class CodexBackend {
         this.cliPath,
         [
           "exec",
+          "--model",
+          model,
+          "--config",
+          `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`,
+          "--config",
+          `service_tier=${JSON.stringify(serviceTier)}`,
           "--skip-git-repo-check",
           "--ephemeral",
           "--sandbox",
