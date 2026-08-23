@@ -4,6 +4,10 @@
 
 从一个问题开始，用可交互的 SVG 图解和知识画布建立领域认知。
 
+## 项目截图
+
+![Solo Learning 知识画布](public/solo-learning-screenshot.png)
+
 ## 功能
 
 - 同时生成文字快答与 SVG 图解
