@@ -1,7 +1,5 @@
-# Solo Learning
-
 <p align="center">
-  <img src="public/favicon.svg" width="72" alt="Solo Learning logo" />
+  <img src="public/solo-learning-banner.png" width="100%" alt="Solo Learning — 对知识产生好奇心" />
 </p>
 
 从一个问题开始，用可交互的 SVG 图解和知识画布建立领域认知。
