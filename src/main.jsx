@@ -3,6 +3,10 @@ import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { getDocument, GlobalWorkerOptions, OPS } from "pdfjs-dist";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { applyDocumentPlan, compactDocumentOutline, compareDocumentTitles, extractMarkdownArchive, MAX_DOCUMENT_IMAGES, parseDocumentOutline } from "./documentArchive.js";
+import { scopeSceneSvgStyles } from "./sceneSvg.js";
 import {
   ArrowLeft,
   ArrowRight,
@@ -10,6 +14,7 @@ import {
   ChevronRight,
   Clock3,
   Download,
+  FileText,
   GripVertical,
   Link2,
   Menu,
@@ -20,9 +25,90 @@ import {
   Settings2,
   Sparkles,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import "./styles.css";
+
+GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+async function fileToDataUrl(file) {
+  const image = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(image.width, image.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  image.close();
+  return canvas.toDataURL("image/jpeg", 0.82);
+}
+
+function selectDocumentImageData(images, names) {
+  const entries = (images || []).map((image, index) => typeof image === "string"
+    ? { name: "", dataUrl: image, index }
+    : { ...image, index });
+  if (!Array.isArray(names)) return entries.map((image) => image.dataUrl);
+  if (!names.length) return [];
+  const wanted = new Set(names.map((name) => String(name).replace(/\\/g, "/")));
+  const namedEntries = entries.filter((image) => image.name);
+  if (!namedEntries.length) return entries.map((image) => image.dataUrl);
+  return namedEntries.filter((image) => {
+    const name = String(image.name).replace(/\\/g, "/");
+    return wanted.has(name) || [...wanted].some((wantedName) => wantedName.endsWith(`/${name}`) || name.endsWith(`/${wantedName}`));
+  }).map((image) => image.dataUrl);
+}
+
+async function extractPdfDocument(file) {
+  const pdf = await getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  const pages = [];
+  const visualPages = [];
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+    const lines = [];
+    let line = "";
+    content.items.forEach((item) => {
+      line += `${line ? " " : ""}${item.str}`;
+      if (item.hasEOL) {
+        if (line.trim()) lines.push(line.replace(/\s+/g, " ").trim());
+        line = "";
+      }
+    });
+    if (line.trim()) lines.push(line.replace(/\s+/g, " ").trim());
+    const text = lines.join("\n");
+    if (text) pages.push(`【第 ${pageNumber} 页】\n${text}`);
+    const operators = await page.getOperatorList();
+    if (operators.fnArray.some((operation) => (
+      operation === OPS.paintImageXObject
+      || operation === OPS.paintInlineImageXObject
+      || operation === OPS.paintImageMaskXObject
+    ))) visualPages.push(pageNumber);
+  }
+  // ponytail: cap rendered pages to bound upload size; raise only if model/image limits increase.
+  const candidates = visualPages.length
+    ? visualPages
+    : Array.from({ length: pdf.numPages }, (_, index) => index + 1);
+  const pageNumbers = candidates.length <= MAX_DOCUMENT_IMAGES
+    ? candidates
+    : Array.from({ length: MAX_DOCUMENT_IMAGES }, (_, index) => (
+        candidates[Math.round(index * (candidates.length - 1) / (MAX_DOCUMENT_IMAGES - 1))]
+      ));
+  const images = [];
+  for (const pageNumber of pageNumbers) {
+    const page = await pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 1.35 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    images.push({ name: `${file.name} · 第 ${pageNumber} 页`, dataUrl: canvas.toDataURL("image/jpeg", 0.78) });
+  }
+  const text = pages.join("\n\n");
+  return { text, images, outline: parseDocumentOutline(text) };
+}
 
 /* Solo archive per-node palettes (4 sets from the 22-token color card)
    Each canvas picks one of 4 harmonious 4-color sets drawn from
@@ -610,6 +696,10 @@ function compareNodeOrder(a, b) {
     if (!Number.isFinite(bOrder)) return -1;
     if (aOrder !== bOrder) return aOrder - bOrder;
   }
+  if (a?.inputMode === "document" && b?.inputMode === "document") {
+    const documentOrder = compareDocumentTitles(a, b);
+    if (documentOrder) return documentOrder;
+  }
   return getCreatedAtTimestamp(b) - getCreatedAtTimestamp(a);
 }
 
@@ -922,7 +1012,10 @@ async function waitForLessonTask(taskId, payload = null, onProgress = null) {
     : await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}`);
 
   while (true) {
-    const task = await response.json();
+    const raw = await response.text();
+    if (!raw) throw new Error("本地 API 未返回结果，请重启服务后重试");
+    let task;
+    try { task = JSON.parse(raw); } catch { throw new Error("本地 API 返回了不完整结果，请重启服务后重试"); }
     if (!response.ok) throw new Error(task.error || "无法恢复生成任务");
     onProgress?.(task);
     if (task.status === "completed") return task.result;
@@ -1083,6 +1176,14 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
   const nodesRef = useRef(initialNodes);
   const [activeId, setActiveId] = useState(initialNodes[0]?.id || null);
   const [query, setQuery] = useState("");
+  const [homeMode, setHomeMode] = useState("question");
+  const [documentText, setDocumentText] = useState("");
+  const [documentName, setDocumentName] = useState("");
+  const [documentImages, setDocumentImages] = useState([]);
+  const [documentOutline, setDocumentOutline] = useState([]);
+  const [documentDetail, setDocumentDetail] = useState("concise");
+  const [documentLoading, setDocumentLoading] = useState(false);
+  const [documentPlanning, setDocumentPlanning] = useState(false);
   const [visualConfig, setVisualConfig] = useState(() => normalizeVisualConfig(initialWorkspace.visualConfig));
   const [visualConfigOpen, setVisualConfigOpen] = useState(null);
   const [visualConfigApplying, setVisualConfigApplying] = useState(false);
@@ -1134,10 +1235,24 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
   const homeQuestionSwapRef = useRef(null);
   const visualConfigRef = useRef(visualConfig);
   const recommendationLocksRef = useRef(new Set());
+  const documentGenerationQueueRef = useRef({ active: 0, waiting: [] });
   const generationEstimateRef = useRef(initialStore.generationEstimateMs || 42_000);
   const storeSaveTimerRef = useRef(null);
   const pendingStoreRef = useRef(null);
   const storeSaveQueueRef = useRef(Promise.resolve());
+
+  const acquireDocumentGenerationSlot = () => new Promise((resolveSlot) => {
+    const queue = documentGenerationQueueRef.current;
+    const start = () => {
+      queue.active += 1;
+      resolveSlot(() => {
+        queue.active = Math.max(0, queue.active - 1);
+        queue.waiting.shift()?.();
+      });
+    };
+    if (queue.active < 2) start();
+    else queue.waiting.push(start);
+  });
 
   const startSidebarResize = (event) => {
     if (event.button !== 0) return;
@@ -1463,13 +1578,36 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
 
   const completeVisualTask = (targetWorkspaceId, nodeId, result) => {
     const boardSize = getSvgBoardSize(result.visual?.sceneSvg);
-    updateWorkspaceNodes(targetWorkspaceId, (current) => current.map((item) => {
+    const targetWorkspace = workspacesRef.current.find((item) => item.id === targetWorkspaceId);
+    const pendingNode = targetWorkspace?.nodes?.find((item) => item.id === nodeId);
+    const sourceOutline = pendingNode?.sourceOutline?.length
+      ? pendingNode.sourceOutline
+      : parseDocumentOutline(pendingNode?.sourceContext);
+    const outline = pendingNode?.documentRoot && !pendingNode.documentExpanded
+      ? pendingNode.documentDetail === "detailed"
+        ? compactDocumentOutline(sourceOutline, "detailed")
+        : applyDocumentPlan(sourceOutline, pendingNode.sourcePlan?.length ? pendingNode.sourcePlan : result.outline)
+      : [];
+    const resolvedVisualConfig = normalizeVisualConfig(result.visualConfig);
+    const completedNodes = updateWorkspaceNodes(targetWorkspaceId, (current) => current.map((item) => {
       if (item.id !== nodeId) return item;
+      const documentResult = item.inputMode === "document" ? {
+        kicker: result.kicker,
+        title: item.sourceTitle || result.title,
+        summary: result.summary,
+        facts: result.facts,
+        children: result.children,
+        textReady: true,
+        textLoading: false,
+        textFailed: false,
+      } : {};
       return {
         ...item,
+        ...documentResult,
         width: boardSize.width,
         height: boardSize.height,
         visual: result.visual,
+        resolvedVisualConfig,
         visualLoading: false,
         visualFailed: false,
         visualFailureMessage: "",
@@ -1478,13 +1616,18 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
         visualAgentStageLabel: null,
         visualAgentStageStartedAt: null,
         visualAgentStageHistory: null,
-        loading: Boolean(item.textLoading),
+        loading: item.inputMode === "document" ? false : Boolean(item.textLoading),
         regenerating: false,
         failed: false,
         retryKind: null,
         preserveViewportAnchorId: null,
+        documentExpanded: item.documentExpanded || outline.length > 0,
       };
     }));
+    if (outline.length) {
+      const rootNode = completedNodes.find((item) => item.id === nodeId);
+      if (rootNode) void expandDocumentTree(targetWorkspaceId, rootNode, outline);
+    }
   };
 
   const failTextTask = (targetWorkspaceId, nodeId, message) => {
@@ -1914,7 +2057,7 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
   const createTopic = async (question, parent = null, elementLabel = "", options = {}) => {
     const clean = question.trim();
     if (!clean) return;
-    const originWorkspaceId = workspaceIdRef.current;
+    const originWorkspaceId = options.workspaceId || workspaceIdRef.current;
     const recommendationSourceId = options.recommendationSourceId || null;
     const recommendationKey = recommendationSourceId
       ? normalizeRecommendationKey(options.recommendationKey || clean)
@@ -1929,8 +2072,8 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
       recommendationLocksRef.current.add(recommendationLockKey);
     }
     const depth = parent ? parent.depth + 1 : 0;
-    const currentNodes = nodesRef.current;
-    const taskVisualConfig = normalizeVisualConfig(options.visualConfig || visualConfigRef.current);
+    const currentNodes = workspacesRef.current.find((item) => item.id === originWorkspaceId)?.nodes || [];
+    const taskVisualConfig = normalizeVisualConfig(options.visualConfig || parent?.resolvedVisualConfig || visualConfigRef.current);
     const isFirstQuestion = !parent && currentNodes.length === 0;
     if (isFirstQuestion) {
       if (firstTopicTimerRef.current) clearTimeout(firstTopicTimerRef.current);
@@ -1943,12 +2086,16 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
     const placeholderId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const textTaskId = `answer-${placeholderId}`;
     const visualTaskId = `visual-${placeholderId}`;
+    const isDocumentTask = options.inputMode === "document";
     const sharedPayload = {
       question: clean,
       learningHistory: summarizeLearningHistory(currentNodes),
-      context: parent
+      inputMode: options.inputMode || "question",
+      documentRoot: options.documentRoot ?? (options.inputMode === "document" && !parent),
+      images: options.images || [],
+      context: options.context || (parent
         ? `父主题名称：${parent.title}${elementLabel ? `；被点击对象：${elementLabel}` : ""}。仅用于消歧，不要复述或沿用父主题内容。`
-        : "",
+        : ""),
     };
     const placeholder = {
       id: placeholderId,
@@ -1968,12 +2115,12 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
       loadingStartedAt: Date.now(),
       estimatedMs: generationEstimateRef.current,
       textReady: false,
-      textLoading: true,
+      textLoading: !isDocumentTask,
       textFailed: false,
-      textTaskId,
-      textAgentStage: "queued",
-      textAgentStageLabel: "正在准备文字答案",
-      textAgentStageStartedAt: Date.now(),
+      textTaskId: isDocumentTask ? null : textTaskId,
+      textAgentStage: isDocumentTask ? null : "queued",
+      textAgentStageLabel: isDocumentTask ? null : "正在准备文字答案",
+      textAgentStageStartedAt: isDocumentTask ? null : Date.now(),
       visualLoading: true,
       visualFailed: false,
       visualTaskId,
@@ -1983,8 +2130,23 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
       preserveViewportAnchorId: parent && options.preserveViewport !== false ? parent.id : null,
       recommendationSourceId,
       recommendationKey,
+      siblingOrder: Number.isFinite(options.siblingOrder) ? options.siblingOrder : undefined,
+      inputMode: options.inputMode || "question",
+      documentRoot: options.documentRoot ?? (options.inputMode === "document" && !parent),
+      documentExpanded: false,
+      sourceDocumentNodeId: options.inputMode === "document" ? options.sourceDocumentNodeId || placeholderId : null,
+      sourceFocus: options.inputMode === "document" ? options.sourceFocus || "" : "",
+      sourceSection: options.inputMode === "document" ? options.sourceSection || "" : "",
+      sourceTitle: options.inputMode === "document" ? options.sourceTitle || "" : "",
+      sourceImageNames: options.inputMode === "document" ? options.sourceImageNames || [] : [],
+      sourceOutline: options.inputMode === "document" && !options.sourceDocumentNodeId ? options.sourceOutline || [] : [],
+      sourcePlan: options.inputMode === "document" && !options.sourceDocumentNodeId ? options.sourcePlan || [] : [],
+      documentDetail: options.inputMode === "document" ? options.documentDetail || "concise" : "",
+      sourceContext: options.inputMode === "document" && !options.sourceDocumentNodeId ? options.context : "",
+      sourceImages: options.inputMode === "document" && !options.sourceDocumentNodeId
+        ? options.imageEntries || options.images
+        : [],
     };
-    setPendingCount((count) => count + 1);
     setError("");
     const withPlaceholder = updateWorkspaceNodes(originWorkspaceId, [...currentNodes, placeholder]);
     preserveNodeScreenPosition(
@@ -2012,16 +2174,30 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
     }
     setQuery("");
     setSidebarOpen(false);
-    setPendingCount((count) => count + 2);
-    const textPromise = waitForLessonTask(textTaskId, {
-      ...sharedPayload,
-      answerMode: "quick",
-    }, (task) => syncTaskProgress(originWorkspaceId, placeholderId, "text", task))
-      .then((result) => completeTextTask(originWorkspaceId, placeholderId, result))
-      .catch((requestError) => {
-        failTextTask(originWorkspaceId, placeholderId, requestError.message || "文字答案生成失败，请重试");
-      })
-      .finally(() => setPendingCount((count) => Math.max(0, count - 1)));
+    setPendingCount((count) => count + (isDocumentTask ? 1 : 2));
+    const releaseDocumentSlot = isDocumentTask
+      ? await acquireDocumentGenerationSlot()
+      : () => {};
+    const queuedNodeExists = workspacesRef.current
+      .find((item) => item.id === originWorkspaceId)?.nodes
+      ?.some((item) => item.id === placeholderId);
+    if (!queuedNodeExists) {
+      releaseDocumentSlot();
+      setPendingCount((count) => Math.max(0, count - (isDocumentTask ? 1 : 2)));
+      if (recommendationLockKey) recommendationLocksRef.current.delete(recommendationLockKey);
+      return null;
+    }
+    const textPromise = isDocumentTask
+      ? Promise.resolve()
+      : waitForLessonTask(textTaskId, {
+          ...sharedPayload,
+          answerMode: "quick",
+        }, (task) => syncTaskProgress(originWorkspaceId, placeholderId, "text", task))
+          .then((result) => completeTextTask(originWorkspaceId, placeholderId, result))
+          .catch((requestError) => {
+            failTextTask(originWorkspaceId, placeholderId, requestError.message || "文字答案生成失败，请重试");
+          })
+          .finally(() => setPendingCount((count) => Math.max(0, count - 1)));
 
     const visualStartedAt = performance.now();
     const visualPromise = waitForLessonTask(visualTaskId, {
@@ -2044,8 +2220,41 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
     try {
       await Promise.allSettled([textPromise, visualPromise]);
     } finally {
+      releaseDocumentSlot();
       if (recommendationLockKey) recommendationLocksRef.current.delete(recommendationLockKey);
     }
+    return workspacesRef.current.find((item) => item.id === originWorkspaceId)?.nodes?.find((item) => item.id === placeholderId) || placeholder;
+  };
+
+  const expandDocumentTree = async (targetWorkspaceId, rootNode, outline) => {
+    const created = new Map();
+    outline.forEach((item, index) => {
+      const parent = item.parent < 0 ? rootNode : created.get(item.parent) || rootNode;
+      const images = selectDocumentImageData(rootNode.sourceImages, item.imageNames || []);
+      void createTopic(`梳理：${item.title}`, parent, "", {
+        workspaceId: targetWorkspaceId,
+        inputMode: "document",
+        documentRoot: false,
+        sourceDocumentNodeId: rootNode.id,
+        sourceFocus: item.scope,
+        sourceSection: item.content,
+        sourceTitle: item.sourceTitle || item.title,
+        sourceImageNames: item.imageNames || [],
+        context: `【原文章节】${item.title}\n保持原章节标题、顺序和层级。只梳理以下原文，不要扩展到其他章节。\n\n${item.content || item.scope}`,
+        images,
+        visualConfig: rootNode.resolvedVisualConfig || workspacesRef.current.find((workspace) => workspace.id === targetWorkspaceId)?.visualConfig,
+        preserveViewport: false,
+        recommendationSourceId: parent.id,
+        recommendationKey: item.title,
+        siblingOrder: index,
+      });
+      const child = findRecommendationNode(
+        workspacesRef.current.find((workspace) => workspace.id === targetWorkspaceId)?.nodes || [],
+        parent.id,
+        item.title,
+      );
+      if (child) created.set(index, child);
+    });
   };
 
   const regenerateNode = async (node, feedback, options = {}) => {
@@ -2057,9 +2266,16 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
     const liveNode = workspaceNodes.find((item) => item.id === node?.id) || node;
     if (!liveNode || liveNode.visualLoading || liveNode.regenerating) return;
     const parent = workspaceNodes.find((item) => item.id === liveNode.parentId);
+    const sourceNode = workspaceNodes.find((item) => item.id === liveNode.sourceDocumentNodeId) || liveNode;
+    const sourceContext = sourceNode === liveNode
+      ? sourceNode.sourceContext || ""
+      : `【原文章节】${liveNode.sourceTitle || liveNode.question}\n只梳理这个范围，不要重新概括整份资料。\n\n${liveNode.sourceSection || liveNode.sourceFocus || ""}`;
+    const sourceImages = selectDocumentImageData(sourceNode.sourceImages, sourceNode === liveNode ? undefined : liveNode.sourceImageNames);
+    const documentRoot = liveNode.inputMode === "document" && !liveNode.parentId;
+    const documentExpanded = documentRoot && workspaceNodes.some((item) => item.parentId === liveNode.id);
     const visualTaskId = `visual-${liveNode.id}-${Date.now()}`;
     const taskVisualConfig = normalizeVisualConfig(
-      options.visualConfig || workspace?.visualConfig || visualConfigRef.current,
+      options.visualConfig || sourceNode?.resolvedVisualConfig || workspace?.visualConfig || visualConfigRef.current,
     );
     setRegenerateTarget(null);
     setRegenerateFeedback("");
@@ -2078,17 +2294,22 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
       visualAgentStage: "queued",
       visualAgentStageLabel: "正在重新生成图解",
       visualAgentStageStartedAt: Date.now(),
+      documentRoot,
+      documentExpanded,
     } : item));
     try {
       const requestStartedAt = performance.now();
       const result = await waitForLessonTask(visualTaskId, {
           question: liveNode.question,
           answerMode: "visual",
+          inputMode: liveNode.inputMode || "question",
+          documentRoot,
+          images: sourceImages,
           learningHistory: summarizeLearningHistory(workspaceNodes.filter((item) => item.id !== liveNode.id)),
           visualConfig: serializeVisualConfig(taskVisualConfig),
-          context: parent
+          context: sourceContext || (parent
             ? `父主题名称：${parent.title}。仅用于消歧，不要复述或沿用父主题内容。`
-            : "",
+            : ""),
           revision: cleanFeedback,
           existingLesson: {
             title: liveNode.title,
@@ -2115,6 +2336,11 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
     const liveNode = workspaceNodes.find((item) => item.id === node?.id);
     if (!liveNode || liveNode.textLoading) return;
     const parent = workspaceNodes.find((item) => item.id === liveNode.parentId);
+    const sourceNode = workspaceNodes.find((item) => item.id === liveNode.sourceDocumentNodeId) || liveNode;
+    const sourceContext = sourceNode === liveNode
+      ? sourceNode.sourceContext || ""
+      : `【原文章节】${liveNode.sourceTitle || liveNode.question}\n只梳理这个范围，不要重新概括整份资料。\n\n${liveNode.sourceSection || liveNode.sourceFocus || ""}`;
+    const sourceImages = selectDocumentImageData(sourceNode.sourceImages, sourceNode === liveNode ? undefined : liveNode.sourceImageNames);
     const textTaskId = `answer-${liveNode.id}-${Date.now()}`;
     setPendingCount((count) => count + 1);
     updateWorkspaceNodes(originWorkspaceId, (current) => current.map((item) => item.id === liveNode.id ? {
@@ -2131,8 +2357,10 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
       const result = await waitForLessonTask(textTaskId, {
         question: liveNode.question,
         answerMode: "quick",
+        inputMode: liveNode.inputMode || "question",
+        images: sourceImages,
         learningHistory: summarizeLearningHistory(workspaceNodes.filter((item) => item.id !== liveNode.id)),
-        context: parent ? `父主题名称：${parent.title}。仅用于消歧。` : "",
+        context: sourceContext || (parent ? `父主题名称：${parent.title}。仅用于消歧。` : ""),
       }, (task) => syncTaskProgress(originWorkspaceId, liveNode.id, "text", task));
       completeTextTask(originWorkspaceId, liveNode.id, result);
     } catch (requestError) {
@@ -2718,23 +2946,156 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
         {!readOnly && nodes.length > 0 && <CanvasVisualConfigBar config={visualConfig} />}
         {!readOnly && (!nodes.length || isFirstTopicTransition) && (
           <form
-            className={`canvas-search is-home ${isFirstTopicTransition ? "is-leaving" : ""} ${visualConfigOpen === "home" ? "has-visual-config" : ""}`}
-            onSubmit={(event) => {
+            className={`canvas-search is-home ${homeMode === "document" ? "is-document" : ""} ${isFirstTopicTransition ? "is-leaving" : ""} ${visualConfigOpen === "home" ? "has-visual-config" : ""}`}
+            onSubmit={async (event) => {
               event.preventDefault();
               setVisualConfigOpen(null);
-              createTopic(query);
+              if (homeMode === "document") {
+                const title = documentName || documentText.split("\n").find(Boolean)?.slice(0, 30) || "粘贴文本";
+                const imageIndex = documentImages.length
+                  ? `\n\n【图片附件顺序】\n${documentImages.map((image, index) => `${index + 1}. ${image.name}`).join("\n")}`
+                  : "";
+                const parsedOutline = parseDocumentOutline(documentText);
+                const sourceOutline = parsedOutline.length ? parsedOutline : documentOutline;
+                const outlineIndex = sourceOutline.length
+                  ? `\n\n【拆解模式】${documentDetail === "detailed" ? "详细" : "精简"}\n【原文章节索引】\n${sourceOutline.map((item) => {
+                      let level = 1;
+                      let parent = item.parent;
+                      while (parent >= 0) {
+                        level += 1;
+                        parent = sourceOutline[parent]?.parent ?? -1;
+                      }
+                      const parentId = item.parent >= 0 ? sourceOutline[item.parent]?.sourceId || sourceOutline[item.parent]?.number : "-";
+                      return `${item.sourceId || item.number}\tL${level}\t父级:${parentId}\t${item.title}`;
+                    }).join("\n")}`
+                  : "";
+                const context = `${documentText.slice(0, 100_000 - imageIndex.length - outlineIndex.length)}${imageIndex}${outlineIndex}`;
+                setDocumentPlanning(true);
+                setError("");
+                try {
+                  const sourcePlan = documentDetail === "concise" && sourceOutline.length
+                    ? (await waitForLessonTask(`plan-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, {
+                        question: `规划：${title}`,
+                        context,
+                        inputMode: "document",
+                        documentRoot: true,
+                        answerMode: "plan",
+                      })).outline
+                    : [];
+                  if (sourcePlan.length) applyDocumentPlan(sourceOutline, sourcePlan, true);
+                  await createTopic(`拆解：${title}`, null, "", {
+                    inputMode: "document",
+                    context: `${context}\n\n【教学结构已预规划】`,
+                    images: documentImages.map((image) => image.dataUrl),
+                    imageEntries: documentImages,
+                    sourceOutline,
+                    sourcePlan,
+                    documentDetail,
+                  });
+                } catch (planError) {
+                  setError(planError.message || "教学结构检查失败，请重试");
+                } finally {
+                  setDocumentPlanning(false);
+                }
+                return;
+              }
+              void createTopic(query);
             }}
           >
-            <Search size={20} />
-            <input
-              ref={homeQueryRef}
-              value={isFirstTopicTransition ? firstTopicTransition.question : query}
-              onChange={(event) => {
-                if (!isFirstTopicTransition) setQuery(event.target.value);
-              }}
-              placeholder="问一个你真正好奇的问题…"
-              aria-label="输入学习问题"
-            />
+            {!isFirstTopicTransition && (
+              <div className="home-mode-tabs" aria-label="学习方式">
+                <button type="button" className={homeMode === "question" ? "is-active" : ""} onClick={() => setHomeMode("question")}>
+                  <Search size={14} />提问
+                </button>
+                <button type="button" className={homeMode === "document" ? "is-active" : ""} onClick={() => setHomeMode("document")}>
+                  <FileText size={14} />拆资料
+                </button>
+              </div>
+            )}
+            {homeMode === "document" ? (
+              <>
+                <textarea
+                  value={documentText}
+                  onChange={(event) => {
+                    setDocumentText(event.target.value);
+                    setDocumentOutline(parseDocumentOutline(event.target.value));
+                    setDocumentName("");
+                  }}
+                  placeholder="粘贴文章正文，或上传 PDF / Markdown ZIP…"
+                  aria-label="粘贴文章或上传 PDF、Markdown ZIP"
+                />
+                <div className="document-meta">
+                  <div className="document-detail-tabs" aria-label="拆解详细程度">
+                    <button type="button" aria-pressed={documentDetail === "concise"} className={documentDetail === "concise" ? "is-active" : ""} onClick={() => setDocumentDetail("concise")} title="按学习目标重组原文，合并重复内容并把低优先级内容收入附录">精简</button>
+                    <button type="button" aria-pressed={documentDetail === "detailed"} className={documentDetail === "detailed" ? "is-active" : ""} onClick={() => setDocumentDetail("detailed")} title="完整保留原著标题、层级和顺序">详细</button>
+                  </div>
+                  <span className="document-status">{documentLoading ? "正在识别页面与图片…" : documentPlanning ? "正在自检教学结构（尚未出图）…" : `${documentName || `${documentText.length.toLocaleString()} 字符`}${documentImages.length ? ` · ${documentImages.length} 张图` : ""}`}</span>
+                </div>
+                <label className="document-upload">
+                  <Upload size={15} />
+                  <span>PDF / ZIP / 图片</span>
+                  <input
+                    type="file"
+                    accept="application/pdf,.pdf,application/zip,application/x-zip-compressed,.zip,image/png,image/jpeg,image/webp"
+                    multiple
+                    onChange={async (event) => {
+                      const files = [...(event.target.files || [])];
+                      if (!files.length) return;
+                      setDocumentLoading(true);
+                      setError("");
+                      try {
+                        const pdfFile = files.find((file) => file.type === "application/pdf" || /\.pdf$/i.test(file.name));
+                        const zipFile = files.find((file) => /\.zip$/i.test(file.name));
+                        if (pdfFile && zipFile) throw new Error("一次请选择一个 PDF 或 ZIP");
+                        const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+                        const uploadedImages = await Promise.all(imageFiles.slice(0, MAX_DOCUMENT_IMAGES).map(async (file) => ({
+                          name: file.name,
+                          dataUrl: await fileToDataUrl(file),
+                        })));
+                        if (zipFile) {
+                          const result = extractMarkdownArchive(await zipFile.arrayBuffer());
+                          const archiveImages = await Promise.all(result.images.map(async (image) => ({
+                            name: image.name,
+                            dataUrl: await fileToDataUrl(new Blob([image.bytes], { type: image.type })),
+                          })));
+                          setDocumentText(result.text);
+                          setDocumentOutline(result.outline);
+                          setDocumentName(zipFile.name.replace(/\.zip$/i, ""));
+                          setDocumentImages([...archiveImages, ...uploadedImages].slice(0, MAX_DOCUMENT_IMAGES));
+                        } else if (pdfFile) {
+                          const result = await extractPdfDocument(pdfFile);
+                          setDocumentText(result.text);
+                          setDocumentOutline(result.outline);
+                          setDocumentName(pdfFile.name.replace(/\.pdf$/i, ""));
+                          setDocumentImages([...result.images, ...uploadedImages].slice(0, MAX_DOCUMENT_IMAGES));
+                        } else {
+                          if (imageFiles[0]) setDocumentName(imageFiles[0].name.replace(/\.[^.]+$/, ""));
+                          setDocumentImages((current) => [...current, ...uploadedImages].slice(0, MAX_DOCUMENT_IMAGES));
+                        }
+                      } catch (pdfError) {
+                        setError(pdfError.message || "资料读取失败");
+                      } finally {
+                        setDocumentLoading(false);
+                        event.target.value = "";
+                      }
+                    }}
+                  />
+                </label>
+              </>
+            ) : (
+              <>
+                <Search size={20} />
+                <input
+                  ref={homeQueryRef}
+                  value={isFirstTopicTransition ? firstTopicTransition.question : query}
+                  onChange={(event) => {
+                    if (!isFirstTopicTransition) setQuery(event.target.value);
+                  }}
+                  placeholder="问一个你真正好奇的问题…"
+                  aria-label="输入学习问题"
+                />
+              </>
+            )}
             <VisualConfigControl
               config={visualConfig}
               open={visualConfigOpen === "home"}
@@ -2746,10 +3107,10 @@ function App({ initialStore, readOnly = false, shareId = "" }) {
               onApply={applyVisualConfigToAll}
               triggerLabel="视觉"
             />
-            <button type="submit" disabled={!query.trim()} title={pendingCount ? "继续提交新问题" : "开始探索"}>
+            <button type="submit" disabled={homeMode === "document" ? documentLoading || documentPlanning || (!documentText.trim() && !documentImages.length) : !query.trim()} title={homeMode === "document" ? "开始梳理" : pendingCount ? "继续提交新问题" : "开始探索"}>
               <ArrowRight size={19} />
             </button>
-            {!isFirstTopicTransition && (
+            {!isFirstTopicTransition && homeMode === "question" && (
               <div
                 className={`home-question-suggestions ${homeQuestionsChanging ? "is-changing" : ""}`}
                 aria-label="推荐问题"
@@ -4438,7 +4799,9 @@ function AnimatedExplainer({ topic, summary, questions, palette, visual, active,
   };
   const diagram = visual?.nodes ? visual : fallback;
   const sceneRef = useRef(null);
-  const sceneSvg = removeSvgConnectionMarkers(diagram.sceneSvg || fallbackSceneSvg(diagram, palette));
+  const sceneSvg = scopeSceneSvgStyles(
+    removeSvgConnectionMarkers(diagram.sceneSvg || fallbackSceneSvg(diagram, palette)),
+  );
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {

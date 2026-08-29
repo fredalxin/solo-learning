@@ -32,6 +32,7 @@ import { OpenCodeBackend } from "./opencode.mjs";
  * @property {string} cwd
  * @property {number} timeoutMs
  * @property {Record<string, string>=} env
+ * @property {string[]=} images      Codex-only: local image paths attached with --image.
  * @property {string=} schemaPath   Codex-only: --output-schema file path.
  * @property {string=} outputPath   Codex-only: --output-last-message file path.
  */
