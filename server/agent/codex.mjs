@@ -24,7 +24,7 @@ export class CodexBackend {
    * @returns {Promise<import("./index.mjs").AgentResult>}
    */
   execute(prompt, options) {
-    const { cwd, timeoutMs, env, schemaPath, outputPath } = options;
+    const { cwd, timeoutMs, env, schemaPath, outputPath, images = [] } = options;
     const model = process.env.CODEX_MODEL || "gpt-5.6-sol";
     const reasoningEffort = process.env.CODEX_REASONING_EFFORT || "medium";
     const serviceTier = process.env.CODEX_SERVICE_TIER || "priority";
@@ -59,6 +59,7 @@ export class CodexBackend {
           schemaPath,
           "--output-last-message",
           outputPath,
+          ...images.flatMap((path) => ["--image", path]),
           "-",
         ],
         {
